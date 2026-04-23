@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Navbar } from "@/components/Navbar";
+import { ConnectWallet } from "@/components/ConnectWallet";
 import { StreamCard } from "@/components/StreamCard";
 import { CreateStreamModal } from "@/components/CreateStreamModal";
 import { TopUpModal } from "@/components/TopUpModal";
@@ -25,7 +25,7 @@ export default function EmployerPage() {
         <Navbar />
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
           <p className="text-gray-400 text-lg">Connect your wallet to get started</p>
-          <ConnectButton />
+          <ConnectWallet />
         </div>
       </div>
     );

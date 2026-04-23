@@ -1,9 +1,12 @@
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { createConfig, http } from "wagmi";
+import { injected } from "wagmi/connectors";
 import { arcTestnet } from "./chains";
 
-export const wagmiConfig = getDefaultConfig({
-  appName: "Cadence",
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "cadence-arc",
+export const wagmiConfig = createConfig({
   chains: [arcTestnet],
+  connectors: [injected()],
+  transports: {
+    [arcTestnet.id]: http(arcTestnet.rpcUrls.default.http[0]),
+  },
   ssr: true,
 });

@@ -1,8 +1,8 @@
 "use client";
 
 import { useAccount } from "wagmi";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Navbar } from "@/components/Navbar";
+import { ConnectWallet } from "@/components/ConnectWallet";
 import { StreamCard } from "@/components/StreamCard";
 import { useEmployeeStreams, useUsdcBalance, useWithdraw } from "@/hooks/usePayroll";
 import { formatUsdc } from "@/lib/utils";
@@ -19,7 +19,7 @@ export default function EmployeePage() {
         <Navbar />
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
           <p className="text-gray-400 text-lg">Connect your wallet to view your earnings</p>
-          <ConnectButton />
+          <ConnectWallet />
         </div>
       </div>
     );

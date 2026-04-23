@@ -62,7 +62,7 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
       {/* Live ticker */}
       <div className="py-2">
         <div className="text-xs text-gray-500 mb-1">
-          {perspective === "employee" ? "Accrued (claimable)" : "Owed to employee"}
+          {perspective === "employee" ? "Ready to withdraw" : "Owed so far"}
         </div>
         <StreamTicker
           initialAccrued={accruedRaw ?? 0n}

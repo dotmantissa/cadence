@@ -1,14 +1,23 @@
-# Compiler files
-cache/
-out/
+# Next.js
+.next/
+node_modules/
+build/
 
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
+# Foundry
+contracts/cache/
+contracts/out/
 
-# Docs
-docs/
+# Ignore broadcast dry-runs but keep testnet deploys
+!/contracts/broadcast
+/contracts/broadcast/*/31337/
+/contracts/broadcast/**/dry-run/
 
-# Dotenv file
+# Dotenv files — never commit secrets
 .env
+.env.local
+.env.*.local
+
+# Misc
+.DS_Store
+*.log
+npm-debug.log*

@@ -119,12 +119,12 @@ export function useCancelStream() {
 }
 
 export function useCreateStream() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   return {
     createStream: (employee: `0x${string}`, ratePerSecond: bigint, deposit: bigint, invoiceRef: string) =>
-      writeContract({
+      writeContractAsync({
         address: PAYROLL_ADDRESS,
         abi: PAYROLL_ABI,
         functionName: "createStream",
@@ -139,12 +139,12 @@ export function useCreateStream() {
 }
 
 export function useApproveUsdc() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   return {
     approve: (amount: bigint) =>
-      writeContract({
+      writeContractAsync({
         address: USDC_ADDRESS,
         abi: ERC20_ABI,
         functionName: "approve",

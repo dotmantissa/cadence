@@ -24,7 +24,7 @@ export default function EmployerPage() {
       <div className="min-h-screen">
         <Navbar />
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-          <p className="text-gray-400 text-lg">Connect your wallet to manage payroll</p>
+          <p className="text-gray-400 text-lg">Connect your wallet to get started</p>
           <ConnectButton />
         </div>
       </div>
@@ -39,8 +39,8 @@ export default function EmployerPage() {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Employer Dashboard</h1>
-            <p className="text-gray-500 text-sm mt-1">Manage your active payroll streams</p>
+            <h1 className="text-2xl font-bold text-white">Payroll</h1>
+            <p className="text-gray-500 text-sm mt-1">Your active streams</p>
           </div>
           <button
             onClick={() => setShowCreate(true)}
@@ -53,13 +53,13 @@ export default function EmployerPage() {
         {/* Balance card */}
         <div className="rounded-xl border border-arc-border bg-arc-card p-5 flex items-center justify-between">
           <div>
-            <p className="text-xs text-gray-500">Wallet USDC Balance</p>
+            <p className="text-xs text-gray-500">USDC Balance</p>
             <p className="text-2xl font-bold text-white font-mono mt-1">
               ${balance !== undefined ? formatUsdc(balance) : "—"}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-xs text-gray-500">Active Streams</p>
+            <p className="text-xs text-gray-500">Streams</p>
             <p className="text-2xl font-bold text-white mt-1">{streams?.length ?? "—"}</p>
           </div>
         </div>
@@ -67,7 +67,7 @@ export default function EmployerPage() {
         {/* Streams */}
         {!streams || streams.length === 0 ? (
           <div className="rounded-xl border border-dashed border-arc-border p-12 text-center">
-            <p className="text-gray-500 mb-3">No streams yet</p>
+            <p className="text-gray-500 mb-3">No streams yet. Create one to get started.</p>
             <button
               onClick={() => setShowCreate(true)}
               className="text-arc-blue hover:underline text-sm"

@@ -21,8 +21,8 @@ export default function Home() {
           </h1>
 
           <p className="text-lg text-gray-400 max-w-xl mx-auto">
-            Cadence streams USDC directly to workers in real time. No waiting for payday.
-            No wire delays. Powered by Arc's sub-second finality and stable gas fees.
+            Cadence streams USDC straight to your workers as they earn it. No waiting until payday.
+            No bank delays. Runs on Arc's fast, low-cost network.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
@@ -46,33 +46,33 @@ export default function Home() {
           {[
             {
               icon: "⚡",
-              title: "Sub-second settlement",
-              desc: "Arc's Malachite BFT consensus gives 350ms deterministic finality — your money moves as fast as a message.",
+              title: "Settles in milliseconds",
+              desc: "Arc settles in 350ms. Your money arrives before the message telling them about it.",
             },
             {
               icon: "$",
-              title: "Stable gas costs",
-              desc: "Arc uses USDC as its native gas token. Employers always know exactly what payroll infrastructure costs.",
+              title: "No fee surprises",
+              desc: "Arc uses USDC for gas too, so you always know what you're spending. No ETH price swings.",
             },
             {
               icon: "🧾",
-              title: "Invoice metadata",
-              desc: "Every stream carries an on-chain invoice reference — making payroll audits and tax reporting trivial.",
+              title: "Built-in record keeping",
+              desc: "Attach an invoice number or reference to every stream. Makes tax time a lot easier.",
             },
             {
               icon: "🔓",
-              title: "Withdraw any time",
-              desc: "Workers claim their accrued USDC whenever they want. No waiting for the 1st of the month.",
+              title: "Get paid whenever you want",
+              desc: "Employees withdraw what they've earned at any point. No more waiting until the end of the month.",
             },
             {
               icon: "📊",
-              title: "Predictable runway",
-              desc: "Employers see live runway in their dashboard. Stream pauses automatically when deposit is depleted.",
+              title: "Know your runway",
+              desc: "Your dashboard shows exactly how long each stream can run. When funds run out it stops automatically.",
             },
             {
               icon: "🌐",
-              title: "Non-custodial",
-              desc: "Cadence is a pure smart contract. No intermediary holds funds — all logic is on-chain.",
+              title: "Your money, your keys",
+              desc: "Cadence is a smart contract. No company or middleman holds your funds. It's all on-chain.",
             },
           ].map((f) => (
             <div key={f.title} className="rounded-xl border border-arc-border bg-arc-card p-5 space-y-2">
@@ -88,11 +88,11 @@ export default function Home() {
           <h2 className="text-xl font-semibold text-white mb-6">How it works</h2>
           <ol className="space-y-4">
             {[
-              { n: "01", text: "Employer approves USDC spend and deposits a treasury into Cadence." },
-              { n: "02", text: "A stream is created with the employee address, daily rate, and an optional invoice reference." },
-              { n: "03", text: "USDC accrues per second, visible live in the employee dashboard." },
-              { n: "04", text: "Employee clicks Withdraw at any time — funds arrive in ~350ms on Arc." },
-              { n: "05", text: "Employer can top up, adjust, or cancel streams at any time." },
+              { n: "01", text: "The employer approves Cadence to spend their USDC and makes an initial deposit." },
+              { n: "02", text: "Set up a stream with the employee's wallet address, the total amount, how long it runs, and an optional invoice reference." },
+              { n: "03", text: "USDC starts flowing to the employee in real time, visible live on their dashboard." },
+              { n: "04", text: "The employee clicks Withdraw whenever they want. Funds land in about 350ms." },
+              { n: "05", text: "Employers can add more funds, or cancel a stream at any time." },
             ].map((step) => (
               <li key={step.n} className="flex gap-4">
                 <span className="flex-shrink-0 w-8 h-8 rounded-full bg-arc-blue/10 border border-arc-blue/30 text-arc-blue text-xs font-mono font-bold flex items-center justify-center">

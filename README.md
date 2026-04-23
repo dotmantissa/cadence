@@ -1,4 +1,7 @@
-# Cadence: Real-Time Payroll on Arc
+<div align="center">
+  <img src="public/logo.svg" width="64" height="64" alt="Cadence" />
+  <h1>Cadence: Real-Time Payroll on Arc</h1>
+</div>
 
 Employers deposit USDC once and employees get paid every second. No waiting for payday, no bank transfers, no delays.
 

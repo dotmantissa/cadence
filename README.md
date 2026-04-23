@@ -1,6 +1,6 @@
-# Cadence
+# Cadence: Real-Time Payroll on Arc
 
-Real-time payroll streaming on Arc testnet. Employers deposit USDC once and employees get paid every second — no waiting for payday, no bank transfers, no delays.
+Employers deposit USDC once and employees get paid every second. No waiting for payday, no bank transfers, no delays.
 
 **Live app:** https://cadence-phi-ochre.vercel.app
 

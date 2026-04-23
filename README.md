@@ -13,7 +13,7 @@ Employers deposit USDC once and employees get paid every second. No waiting for 
 
 Traditional payroll pays you once a month (or once a week if you're lucky). Cadence flips that model: the moment your employer sets up a stream, USDC starts flowing to your wallet continuously. You can withdraw whatever you've earned at any point, and it arrives in about 350ms on Arc.
 
-For employers, it's just as simple. You deposit a lump sum upfront, set a daily rate for each employee, and Cadence handles the rest. Your dashboard shows live runway — exactly how long each stream can run before the funds run out — so you always know where you stand.
+For employers it's just as simple. You deposit a lump sum upfront, set a daily rate for each employee, and Cadence handles the rest. Your dashboard shows live runway so you always know exactly how long each stream can run before the funds run out.
 
 Everything runs on a smart contract. No company holds your money.
 
@@ -25,7 +25,7 @@ Everything runs on a smart contract. No company holds your money.
 2. Cadence calculates the per-second rate and starts streaming USDC immediately.
 3. The employee connects their wallet on the employee dashboard and sees their earnings accumulating in real time.
 4. The employee clicks **Withdraw** whenever they want. Funds arrive in about 350ms.
-5. The employer can top up a stream with more funds, or cancel it at any time (unused funds are returned).
+5. The employer can top up a stream with more funds, or cancel it at any time. Any unstreamed funds go straight back to the employer's wallet.
 
 ---
 
@@ -127,11 +127,11 @@ cadence/
 
 ## Tech stack
 
-- **Smart contracts** — Solidity, Foundry
-- **Frontend** — Next.js 15, TypeScript, Tailwind CSS
-- **Wallet / onchain** — wagmi v2, viem, MetaMask
-- **Network** — Arc Testnet (Chain ID 5042002, 350ms finality)
-- **Hosting** — Vercel
+- **Smart contracts:** Solidity, Foundry
+- **Frontend:** Next.js 15, TypeScript, Tailwind CSS
+- **Wallet / onchain:** wagmi v2, viem, MetaMask
+- **Network:** Arc Testnet (Chain ID 5042002, 350ms finality)
+- **Hosting:** Vercel
 
 ---
 
@@ -140,4 +140,4 @@ cadence/
 - USDC on Arc uses **6 decimals** as an ERC-20, even though the network uses USDC as its native gas token (18 decimals internally). All amounts in this app are in 6-decimal USDC.
 - Streams can only be created and topped up by the employer who owns them.
 - Cancelling a stream returns all unstreamed funds to the employer's wallet.
-- The live per-second ticker in the UI is client-side interpolation — it smooths the display between on-chain polls rather than polling the RPC on every animation frame.
+- The live ticker smooths the display between on-chain updates on the client side so it never hammers the RPC on every animation frame.

@@ -3,10 +3,11 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Cadence — Real-Time Payroll on Arc",
+  title: "Cadence: Real-Time Payroll on Arc",
   description: "Stream USDC salaries per second. Powered by Arc's sub-second finality.",
+  icons: { icon: "/logo.svg", shortcut: "/logo.svg" },
   openGraph: {
-    title: "Cadence",
+    title: "Cadence: Real-Time Payroll on Arc",
     description: "Stream USDC salaries per second on Arc blockchain.",
     type: "website",
   },

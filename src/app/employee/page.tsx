@@ -1,9 +1,11 @@
 "use client";
 
 import { useAccount } from "wagmi";
+import { Wallet } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { ConnectWallet } from "@/components/ConnectWallet";
+import { WalletGate } from "@/components/WalletGate";
 import { StreamCard } from "@/components/StreamCard";
+import { LiquidBackground } from "@/components/motion/LiquidBackground";
 import { useEmployeeStreams, useUsdcBalance, useWithdraw } from "@/hooks/usePayroll";
 import { formatUsdc } from "@/lib/utils";
 
@@ -15,49 +17,60 @@ export default function EmployeePage() {
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen">
+      <div className="min-h-screen bg-paper">
         <Navbar />
-        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-          <p className="text-gray-400 text-lg">Connect your wallet to view your earnings</p>
-          <ConnectWallet />
-        </div>
+        <WalletGate
+          headline="Connect to see your bag"
+          sub="Link your wallet to watch your salary tick up by the second and cash out whenever you feel like it."
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-paper">
       <Navbar />
 
-      <main className="max-w-4xl mx-auto px-4 py-10 space-y-8">
+      <main className="mx-auto max-w-5xl px-5 pb-24 pt-28 sm:px-8">
         <div>
-          <h1 className="text-2xl font-bold text-white">My Earnings</h1>
-          <p className="text-gray-500 text-sm mt-1">Your active streams, updated every second</p>
+          <p className="font-mono text-xs uppercase tracking-widest text-volt">the earning side</p>
+          <h1 className="mt-2 text-4xl font-semibold tracking-tightest text-ink">My earnings</h1>
+          <p className="mt-1 text-sm text-ink/50">Updated every second, no refresh needed.</p>
         </div>
 
-        {/* Balance */}
-        <div className="rounded-xl border border-arc-border bg-arc-card p-5">
-          <p className="text-xs text-gray-500">USDC Balance</p>
-          <p className="text-3xl font-bold text-white font-mono mt-1">
-            ${balance !== undefined ? formatUsdc(balance) : "—"}
-          </p>
-          <p className="text-xs text-gray-600 mt-1">What you've withdrawn shows up here</p>
+        {/* Wallet balance */}
+        <div className="relative mt-8 overflow-hidden rounded-4xl border border-black/10 bg-ink p-7 text-paper">
+          <LiquidBackground pull={0.06} intensity={0.9} tone="ink" />
+          <div className="relative">
+            <div className="flex items-center gap-2 text-xs text-paper/50">
+              <Wallet size={13} /> in your wallet
+            </div>
+            <p className="mt-2 font-mono text-4xl font-semibold tracking-tight sm:text-5xl">
+              ${balance !== undefined ? formatUsdc(balance) : "0.00"}
+            </p>
+            <p className="mt-2 text-xs text-paper/40">Whatever you have cashed out lands here.</p>
+          </div>
         </div>
 
         {/* Streams */}
         {!streams || streams.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-arc-border p-12 text-center">
-            <p className="text-gray-500">No streams set up for this wallet</p>
-            <p className="text-gray-600 text-sm mt-1">Ask your employer to create a stream for you</p>
+          <div className="mt-8 rounded-4xl border border-dashed border-black/15 bg-paper-warm p-14 text-center">
+            <p className="text-ink/60">No streams pointed at this wallet yet.</p>
+            <p className="mt-1 text-sm text-ink/40">
+              Ask whoever signs the checks to spin one up for you.
+            </p>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="mt-8 grid gap-5 sm:grid-cols-2">
             {[...streams].reverse().map((id) => (
               <StreamCard
                 key={id.toString()}
                 streamId={id}
                 perspective="employee"
-                onWithdraw={() => { withdraw(id); refetch(); }}
+                onWithdraw={() => {
+                  withdraw(id);
+                  refetch();
+                }}
               />
             ))}
           </div>

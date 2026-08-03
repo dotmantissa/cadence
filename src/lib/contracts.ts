@@ -1,6 +1,6 @@
 export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
 
-// Set after deployment — update NEXT_PUBLIC_PAYROLL_ADDRESS in .env.local
+// Set after deployment. Update NEXT_PUBLIC_PAYROLL_ADDRESS in .env.local
 export const PAYROLL_ADDRESS = (
   process.env.NEXT_PUBLIC_PAYROLL_ADDRESS ?? ""
 ) as `0x${string}`;

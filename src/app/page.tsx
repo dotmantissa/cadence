@@ -1,109 +1,179 @@
+"use client";
+
+import { motion } from "framer-motion";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import Link from "next/link";
+import { Button } from "@/components/Button";
+import { LiquidBackground } from "@/components/motion/LiquidBackground";
+import { Reveal } from "@/components/motion/Reveal";
+import { LiveMoneyCard } from "@/components/landing/LiveMoneyCard";
+import { Marquee } from "@/components/landing/Marquee";
+import { FeatureCarousel } from "@/components/landing/FeatureCarousel";
+import { HowItFlows } from "@/components/landing/HowItFlows";
+import { AudienceSplit } from "@/components/landing/AudienceSplit";
+import { Footer } from "@/components/landing/Footer";
 
 export default function Home() {
   return (
-    <div className="min-h-screen">
+    <main className="relative min-h-screen bg-paper">
       <Navbar />
 
-      <main className="max-w-5xl mx-auto px-4 pt-20 pb-24">
-        {/* Hero */}
-        <div className="text-center space-y-6 mb-20">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-arc-blue/30 bg-arc-blue/10 text-arc-blue text-xs font-medium">
-            <div className="w-1.5 h-1.5 rounded-full bg-arc-blue animate-pulse" />
-            Live on Arc Testnet
-          </div>
+      {/* HERO */}
+      <section className="relative overflow-hidden">
+        <LiquidBackground pull={0.08} intensity={1} tone="light" />
+        {/* soft paper wash so text stays crisp over the canvas */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-paper/40 via-paper/10 to-paper" />
 
-          <h1 className="text-5xl sm:text-6xl font-bold text-white tracking-tight leading-tight">
-            Payroll that pays
-            <br />
-            <span className="text-arc-blue">every second.</span>
-          </h1>
+        <div className="relative mx-auto max-w-7xl px-5 pb-24 pt-32 sm:px-8 sm:pt-40 lg:pb-32">
+          <div className="grid items-center gap-16 lg:grid-cols-[1.05fr_0.95fr]">
+            <div>
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-3.5 py-1.5 text-xs font-medium text-ink/70 backdrop-blur"
+              >
+                <Sparkles size={13} className="text-volt" />
+                live payroll on Arc Testnet
+              </motion.div>
 
-          <p className="text-lg text-gray-400 max-w-xl mx-auto">
-            Cadence streams USDC straight to your workers as they earn it. No waiting until payday.
-            No bank delays. Runs on Arc's fast, low-cost network.
-          </p>
+              <motion.h1
+                initial={{ opacity: 0, y: 22 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                className="mt-6 text-5xl font-semibold leading-[0.98] tracking-tightest text-ink sm:text-6xl lg:text-7xl"
+              >
+                Your salary,
+                <br />
+                streaming{" "}
+                <span className="volt-text font-display italic">
+                  every second
+                </span>
+              </motion.h1>
 
-          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-            <Link
-              href="/employer"
-              className="px-6 py-3 rounded-xl bg-arc-blue hover:bg-blue-600 text-white font-medium transition-colors"
+              <motion.p
+                initial={{ opacity: 0, y: 22 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.16, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                className="mt-6 max-w-lg text-lg leading-relaxed text-ink/60"
+              >
+                Payday is a relic. Cadence pays your team by the second in USDC,
+                settles in about 350ms, and lets everyone cash out whenever they
+                feel like it. No batch jobs, no waiting, no custodian.
+              </motion.p>
+
+              <motion.div
+                initial={{ opacity: 0, y: 22 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.24, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center"
+              >
+                <Button href="/employer" variant="volt">
+                  Start streaming pay
+                  <ArrowRight size={16} />
+                </Button>
+                <Button href="/employee" variant="ghost">
+                  I&apos;m here to get paid
+                </Button>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.4, duration: 0.8 }}
+                className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-ink/45"
+              >
+                <span className="font-mono">~350ms finality</span>
+                <span className="font-mono">gas paid in USDC</span>
+                <span className="font-mono">non custodial</span>
+              </motion.div>
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: 0.2, duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+              className="flex justify-center lg:justify-end"
             >
-              Start Paying Employees
-            </Link>
-            <Link
-              href="/employee"
-              className="px-6 py-3 rounded-xl border border-arc-border hover:border-gray-500 text-gray-300 hover:text-white font-medium transition-colors"
-            >
-              View My Earnings
-            </Link>
+              <LiveMoneyCard />
+            </motion.div>
           </div>
         </div>
+      </section>
 
-        {/* Feature grid */}
-        <div className="grid sm:grid-cols-3 gap-4 mb-16">
+      <Marquee />
+
+      {/* FEATURES */}
+      <section className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8 lg:py-32">
+        <FeatureCarousel />
+      </section>
+
+      {/* HOW IT FLOWS */}
+      <section className="relative bg-paper-warm">
+        <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8 lg:py-32">
+          <HowItFlows />
+        </div>
+      </section>
+
+      {/* NUMBERS */}
+      <section className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8 lg:py-28">
+        <div className="grid gap-8 rounded-5xl border border-black/10 bg-paper p-10 sm:grid-cols-3 sm:p-14">
           {[
-            {
-              icon: "⚡",
-              title: "Settles in milliseconds",
-              desc: "Arc settles in 350ms. Your money arrives before the message telling them about it.",
-            },
-            {
-              icon: "$",
-              title: "No fee surprises",
-              desc: "Arc uses USDC for gas too, so you always know what you're spending. No ETH price swings.",
-            },
-            {
-              icon: "🧾",
-              title: "Built-in record keeping",
-              desc: "Attach an invoice number or reference to every stream. Makes tax time a lot easier.",
-            },
-            {
-              icon: "🔓",
-              title: "Get paid whenever you want",
-              desc: "Employees withdraw what they've earned at any point. No more waiting until the end of the month.",
-            },
-            {
-              icon: "📊",
-              title: "Know your runway",
-              desc: "Your dashboard shows exactly how long each stream can run. When funds run out it stops automatically.",
-            },
-            {
-              icon: "🌐",
-              title: "Your money, your keys",
-              desc: "Cadence is a smart contract. No company or middleman holds your funds. It's all on-chain.",
-            },
-          ].map((f) => (
-            <div key={f.title} className="rounded-xl border border-arc-border bg-arc-card p-5 space-y-2">
-              <div className="text-2xl">{f.icon}</div>
-              <h3 className="font-semibold text-white">{f.title}</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">{f.desc}</p>
-            </div>
+            { k: "350ms", v: "average settlement on Arc, wallet to wallet" },
+            { k: "1s", v: "how often a stream pushes fresh USDC to your team" },
+            { k: "0", v: "payday tickets, batch runs, or awkward reminders" },
+          ].map((s, i) => (
+            <Reveal key={s.k} delay={i * 0.1} className="text-center sm:text-left">
+              <p className="volt-text text-5xl font-semibold tracking-tightest sm:text-6xl">
+                {s.k}
+              </p>
+              <p className="mx-auto mt-3 max-w-[16rem] text-sm leading-relaxed text-ink/55 sm:mx-0">
+                {s.v}
+              </p>
+            </Reveal>
           ))}
         </div>
+      </section>
 
-        {/* How it works */}
-        <div className="rounded-2xl border border-arc-border bg-arc-card p-8">
-          <h2 className="text-xl font-semibold text-white mb-6">How it works</h2>
-          <ol className="space-y-4">
-            {[
-              { n: "01", text: "The employer approves Cadence to spend their USDC and makes an initial deposit." },
-              { n: "02", text: "Set up a stream with the employee's wallet address, the total amount, how long it runs, and an optional invoice reference." },
-              { n: "03", text: "USDC starts flowing to the employee in real time, visible live on their dashboard." },
-              { n: "04", text: "The employee clicks Withdraw whenever they want. Funds land in about 350ms." },
-              { n: "05", text: "Employers can add more funds, or cancel a stream at any time." },
-            ].map((step) => (
-              <li key={step.n} className="flex gap-4">
-                <span className="flex-shrink-0 w-8 h-8 rounded-full bg-arc-blue/10 border border-arc-blue/30 text-arc-blue text-xs font-mono font-bold flex items-center justify-center">
-                  {step.n}
-                </span>
-                <p className="text-gray-400 text-sm leading-relaxed pt-1">{step.text}</p>
-              </li>
-            ))}
-          </ol>
+      {/* AUDIENCE SPLIT */}
+      <section className="relative mx-auto max-w-7xl px-5 pb-24 sm:px-8 lg:pb-32">
+        <Reveal className="mb-12 max-w-2xl">
+          <p className="font-mono text-xs uppercase tracking-widest text-volt">
+            pick your side
+          </p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tightest text-ink sm:text-4xl">
+            Two doors. Same stream.
+          </h2>
+        </Reveal>
+        <AudienceSplit />
+      </section>
+
+      {/* CLOSING CTA */}
+      <section className="relative overflow-hidden bg-ink">
+        <LiquidBackground pull={0.1} intensity={1} tone="ink" />
+        <div className="relative mx-auto max-w-4xl px-5 py-28 text-center sm:px-8 lg:py-36">
+          <Reveal>
+            <h2 className="text-4xl font-semibold tracking-tightest text-paper sm:text-6xl">
+              Stop waiting on the 30th.
+            </h2>
+            <p className="mx-auto mt-5 max-w-xl text-lg text-paper/60">
+              Spin up a stream in a couple of clicks and let the money move on
+              its own. Your team will wonder how they ever did it the old way.
+            </p>
+            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Button href="/employer" variant="volt">
+                Launch a stream
+                <ArrowRight size={16} />
+              </Button>
+              <Button href="/employee" variant="paper">
+                Check my earnings
+              </Button>
+            </div>
+          </Reveal>
         </div>
-      </main>
-    </div>
+      </section>
+
+      <Footer />
+    </main>
   );
 }

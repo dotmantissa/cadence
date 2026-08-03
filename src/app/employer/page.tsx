@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { useAccount } from "wagmi";
+import { motion } from "framer-motion";
+import { Plus, Wallet, Waves } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { ConnectWallet } from "@/components/ConnectWallet";
+import { WalletGate } from "@/components/WalletGate";
 import { StreamCard } from "@/components/StreamCard";
 import { CreateStreamModal } from "@/components/CreateStreamModal";
 import { TopUpModal } from "@/components/TopUpModal";
-import { useEmployerStreams, useUsdcBalance, useCancelStream, useWithdraw } from "@/hooks/usePayroll";
+import { LiquidBackground } from "@/components/motion/LiquidBackground";
+import { useEmployerStreams, useUsdcBalance, useCancelStream } from "@/hooks/usePayroll";
 import { formatUsdc } from "@/lib/utils";
 
 export default function EmployerPage() {
@@ -21,62 +24,76 @@ export default function EmployerPage() {
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen">
+      <div className="min-h-screen bg-paper">
         <Navbar />
-        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-          <p className="text-gray-400 text-lg">Connect your wallet to get started</p>
-          <ConnectWallet />
-        </div>
+        <WalletGate
+          headline="Connect to run payroll"
+          sub="Hook up your wallet to open streams, top them up, and watch your runway in real time."
+        />
       </div>
     );
   }
 
+  const activeCount = streams?.length ?? 0;
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-paper">
       <Navbar />
 
-      <main className="max-w-4xl mx-auto px-4 py-10 space-y-8">
+      <main className="mx-auto max-w-5xl px-5 pb-24 pt-28 sm:px-8">
         {/* Header */}
-        <div className="flex items-start justify-between">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-white">Payroll</h1>
-            <p className="text-gray-500 text-sm mt-1">Your active streams</p>
+            <p className="font-mono text-xs uppercase tracking-widest text-volt">the money side</p>
+            <h1 className="mt-2 text-4xl font-semibold tracking-tightest text-ink">Payroll</h1>
+            <p className="mt-1 text-sm text-ink/50">Every stream you are running, live.</p>
           </div>
-          <button
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => setShowCreate(true)}
-            className="px-4 py-2 rounded-xl bg-arc-blue hover:bg-blue-600 text-white text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 rounded-full bg-volt px-5 py-3 text-sm font-medium text-white shadow-[0_8px_30px_-6px_rgba(43,68,231,0.6)] transition-colors hover:bg-volt-bright"
           >
-            + New Stream
-          </button>
+            <Plus size={16} /> New stream
+          </motion.button>
         </div>
 
-        {/* Balance card */}
-        <div className="rounded-xl border border-arc-border bg-arc-card p-5 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-gray-500">USDC Balance</p>
-            <p className="text-2xl font-bold text-white font-mono mt-1">
-              ${balance !== undefined ? formatUsdc(balance) : "—"}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-500">Streams</p>
-            <p className="text-2xl font-bold text-white mt-1">{streams?.length ?? "—"}</p>
+        {/* Balance strip */}
+        <div className="relative mt-8 overflow-hidden rounded-4xl border border-black/10 bg-ink p-7 text-paper">
+          <LiquidBackground pull={0.06} intensity={0.9} tone="ink" />
+          <div className="relative flex flex-wrap items-center justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-2 text-xs text-paper/50">
+                <Wallet size={13} /> USDC balance
+              </div>
+              <p className="mt-2 font-mono text-4xl font-semibold tracking-tight">
+                ${balance !== undefined ? formatUsdc(balance) : "0.00"}
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="flex items-center justify-end gap-2 text-xs text-paper/50">
+                <Waves size={13} /> active streams
+              </div>
+              <p className="mt-2 font-mono text-4xl font-semibold tracking-tight text-volt-bright">
+                {streams ? activeCount : "0"}
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Streams */}
         {!streams || streams.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-arc-border p-12 text-center">
-            <p className="text-gray-500 mb-3">No streams yet. Create one to get started.</p>
+          <div className="mt-8 rounded-4xl border border-dashed border-black/15 bg-paper-warm p-14 text-center">
+            <p className="text-ink/60">No streams yet. The team is waiting.</p>
             <button
               onClick={() => setShowCreate(true)}
-              className="text-arc-blue hover:underline text-sm"
+              className="mt-3 text-sm font-medium text-volt transition-colors hover:text-volt-bright"
             >
-              Create your first stream
+              Open your first stream
             </button>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="mt-8 grid gap-5 sm:grid-cols-2">
             {[...streams].reverse().map((id) => (
               <StreamCard
                 key={id.toString()}
@@ -93,14 +110,20 @@ export default function EmployerPage() {
       {showCreate && (
         <CreateStreamModal
           onClose={() => setShowCreate(false)}
-          onSuccess={() => { setShowCreate(false); refetch(); }}
+          onSuccess={() => {
+            setShowCreate(false);
+            refetch();
+          }}
         />
       )}
 
       {topUpStreamId !== null && (
         <TopUpModal
           streamId={topUpStreamId}
-          onClose={() => { setTopUpStreamId(null); refetch(); }}
+          onClose={() => {
+            setTopUpStreamId(null);
+            refetch();
+          }}
         />
       )}
     </div>

@@ -12,10 +12,13 @@ contracts/out/
 /contracts/broadcast/*/31337/
 /contracts/broadcast/**/dry-run/
 
-# Dotenv files — never commit secrets
+# Dotenv files, never commit secrets
 .env
 .env.local
 .env.*.local
+
+# TypeScript incremental build cache
+*.tsbuildinfo
 
 # Misc
 .DS_Store

@@ -21,7 +21,7 @@ export function parseUsdc(display: string): bigint {
   return BigInt(Math.round(n * 1_000_000));
 }
 
-/** Seconds → human-readable runway string */
+/** Seconds to human-readable runway string */
 export function formatRunway(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
@@ -41,7 +41,7 @@ export function rateToMonthly(ratePerSecond: bigint): string {
   return formatUsdc(ratePerSecond * 2592000n); // 30 days
 }
 
-/** Human-friendly daily rate → ratePerSecond bigint (6 decimals) */
+/** Human-friendly daily rate to ratePerSecond bigint (6 decimals) */
 export function dailyRateToPerSecond(dailyUsdc: string): bigint {
   return parseUsdc(dailyUsdc) / 86400n;
 }

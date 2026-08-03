@@ -1,31 +1,133 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { Menu, X } from "lucide-react";
+import { Logo } from "./Logo";
 import { ConnectWallet } from "./ConnectWallet";
+import { cn } from "@/lib/utils";
+
+const links = [
+  { href: "/employer", label: "Pay a team" },
+  { href: "/employee", label: "Get paid" },
+];
 
 export function Navbar() {
-  return (
-    <nav className="border-b border-arc-border bg-arc-dark/80 backdrop-blur-sm sticky top-0 z-50">
-      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-arc-blue flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M7 1L7 13M1 7L13 7" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </div>
-          <span className="font-semibold text-white tracking-tight">Cadence</span>
-        </Link>
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
-        <div className="flex items-center gap-4">
-          <Link href="/employer" className="text-sm text-gray-400 hover:text-white transition-colors">
-            Employer
-          </Link>
-          <Link href="/employee" className="text-sm text-gray-400 hover:text-white transition-colors">
-            Employee
-          </Link>
-          <ConnectWallet />
-        </div>
-      </div>
-    </nav>
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  return (
+    <>
+      <motion.header
+        initial={{ y: -80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+        className={cn(
+          "fixed inset-x-0 top-0 z-50 transition-all duration-500 ease-liquid",
+          scrolled
+            ? "glass border-b border-black/5"
+            : "bg-transparent"
+        )}
+      >
+        <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
+          <Logo />
+
+          <div className="hidden items-center gap-1 md:flex">
+            {links.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={cn(
+                  "relative rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                  pathname === l.href
+                    ? "text-ink"
+                    : "text-ink/55 hover:text-ink"
+                )}
+              >
+                {pathname === l.href && (
+                  <motion.span
+                    layoutId="nav-pill"
+                    className="absolute inset-0 -z-10 rounded-full bg-black/5"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                {l.label}
+              </Link>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden md:block">
+              <ConnectWallet />
+            </div>
+            <button
+              onClick={() => setOpen((v) => !v)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 text-ink md:hidden"
+              aria-label={open ? "Close menu" : "Open menu"}
+            >
+              {open ? <X size={18} /> : <Menu size={18} />}
+            </button>
+          </div>
+        </nav>
+      </motion.header>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 bg-paper/95 backdrop-blur-xl md:hidden"
+          >
+            <div className="flex flex-col gap-2 px-6 pt-24">
+              {links.map((l, i) => (
+                <motion.div
+                  key={l.href}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.08 + i * 0.07 }}
+                >
+                  <Link
+                    href={l.href}
+                    className="block border-b border-black/5 py-5 text-3xl font-semibold tracking-tightest text-ink"
+                  >
+                    {l.label}
+                  </Link>
+                </motion.div>
+              ))}
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.28 }}
+                className="mt-6"
+              >
+                <ConnectWallet />
+              </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

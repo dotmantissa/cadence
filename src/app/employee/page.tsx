@@ -1,13 +1,25 @@
 "use client";
 
-import { useMemo } from "react";
-import { Wallet, Waves, Eye, EyeOff } from "lucide-react";
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { Wallet, Waves, Eye, EyeOff, Send } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
 import { StreamCollection } from "@/components/StreamCollection";
+import { RequestCollection } from "@/components/RequestCollection";
+import { RequestStreamModal } from "@/components/RequestStreamModal";
+import { ViewTabs } from "@/components/ViewTabs";
 import { FlowField } from "@/components/motion/FlowField";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
-import { useEmployeeStreams, useUsdcBalance, useWithdraw, useStreamsMeta } from "@/hooks/usePayroll";
+import {
+  useEmployeeStreams,
+  useUsdcBalance,
+  useWithdraw,
+  useStreamsMeta,
+  usePayeeRequests,
+  useRequestsMeta,
+  ReqStatus,
+} from "@/hooks/usePayroll";
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
 import { formatUsdc } from "@/lib/utils";
 
@@ -18,12 +30,35 @@ export default function EmployeePage() {
   const { withdraw } = useWithdraw();
   const [hideBalance, toggleBalance] = useBalancePrivacy();
 
+  const [view, setView] = useState<"streams" | "requests">("streams");
+  const [showRequest, setShowRequest] = useState(false);
+
   const ordered = useMemo(() => (ids ? [...ids].reverse() : []), [ids]);
   const { streams, isLoading: loadingMeta } = useStreamsMeta(ordered);
   const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
 
+  // Requests this wallet has sent (it is the payee), newest-first.
+  const { data: reqIds, isLoading: loadingReqIds, refetch: refetchReqs } = usePayeeRequests(address);
+  const orderedReqs = useMemo(() => (reqIds ? [...reqIds].reverse() : []), [reqIds]);
+  const { requests } = useRequestsMeta(orderedReqs);
+  const openReqCount = useMemo(
+    () => requests.filter((r) => r.status === ReqStatus.Pending || r.status === ReqStatus.Countered).length,
+    [requests]
+  );
+
   const totalCount = ordered.length;
-  const activeCount = useMemo(() => streams.filter((s) => s.active).length, [streams]);
+  // "Ongoing" excludes scheduled streams (active on-chain but not yet flowing).
+  const { activeCount, scheduledCount } = useMemo(() => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    let active = 0;
+    let scheduled = 0;
+    for (const s of streams) {
+      if (!s.active) continue;
+      if (Number(s.startTime) > nowSec) scheduled++;
+      else active++;
+    }
+    return { activeCount: active, scheduledCount: scheduled };
+  }, [streams]);
 
   if (!connected) {
     return (
@@ -42,27 +77,37 @@ export default function EmployeePage() {
       <Navbar />
 
       <main className="mx-auto max-w-5xl px-5 pb-24 pt-28 sm:px-8">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-volt">the earning side</p>
-          <h1 className="mt-2 text-4xl font-semibold tracking-tightest text-ink">My earnings</h1>
-          <p className="mt-1 text-sm text-ink/50">Updated every second, no refresh needed.</p>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-widest text-volt">the earning side</p>
+            <h1 className="mt-2 text-4xl font-semibold tracking-tightest text-ink">My earnings</h1>
+            <p className="mt-1 text-sm text-ink/50">Updated every second, no refresh needed.</p>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setShowRequest(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-volt px-5 py-3 text-sm font-medium text-white shadow-[0_8px_30px_-6px_rgba(43,68,231,0.6)] transition-colors hover:bg-volt-bright"
+          >
+            <Send size={16} /> Request a stream
+          </motion.button>
         </div>
 
         {/* Wallet balance */}
         <div className="relative mt-8 overflow-hidden rounded-none border border-ink/10 bg-panel p-7 text-panel-foreground">
           <FlowField tone="ink" density={0.9} />
-          <button
-            onClick={toggleBalance}
-            className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full text-panel-foreground/40 transition-colors hover:bg-white/10 hover:text-panel-foreground"
-            aria-label={hideBalance ? "Show balance" : "Hide balance"}
-            title={hideBalance ? "Show balance" : "Hide balance"}
-          >
-            {hideBalance ? <EyeOff size={15} /> : <Eye size={15} />}
-          </button>
           <div className="relative flex flex-wrap items-end justify-between gap-6">
             <div>
               <div className="flex items-center gap-2 text-xs text-panel-foreground/50">
                 <Wallet size={13} /> in your wallet
+                <button
+                  onClick={toggleBalance}
+                  className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-full text-panel-foreground/40 transition-colors hover:bg-white/10 hover:text-panel-foreground"
+                  aria-label={hideBalance ? "Show balance" : "Hide balance"}
+                  title={hideBalance ? "Show balance" : "Hide balance"}
+                >
+                  {hideBalance ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
               </div>
               <p className="mt-2 font-mono text-4xl font-semibold tracking-tight sm:text-5xl">
                 {balance === undefined ? (
@@ -87,31 +132,72 @@ export default function EmployeePage() {
                 )}
               </p>
               <p className="mt-1 text-xs text-panel-foreground/40">
-                {loadingStreams ? "" : `${activeCount} ongoing`}
+                {loadingStreams
+                  ? ""
+                  : `${activeCount} ongoing${scheduledCount > 0 ? ` · ${scheduledCount} scheduled` : ""}`}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Streams */}
-        <StreamCollection
-          streams={streams}
-          perspective="employee"
-          loading={loadingStreams}
-          onWithdraw={(id) => {
-            withdraw(id);
-            refetch();
-          }}
-          emptyState={
-            <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
-              <p className="text-ink/60">No streams pointed at this wallet yet.</p>
-              <p className="mt-1 text-sm text-ink/40">
-                Ask whoever signs the checks to spin one up for you.
-              </p>
-            </div>
-          }
+        {/* Streams / Requests */}
+        <ViewTabs
+          className="mt-10"
+          value={view}
+          onChange={setView}
+          streamCount={totalCount}
+          requestCount={openReqCount}
         />
+
+        {view === "streams" ? (
+          <StreamCollection
+            streams={streams}
+            perspective="employee"
+            loading={loadingStreams}
+            onWithdraw={(id) => {
+              withdraw(id);
+              refetch();
+            }}
+            emptyState={
+              <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
+                <p className="text-ink/60">No streams pointed at this wallet yet.</p>
+                <p className="mt-1 text-sm text-ink/40">
+                  Ask whoever signs the checks to spin one up — or request one yourself.
+                </p>
+              </div>
+            }
+          />
+        ) : (
+          <RequestCollection
+            ids={orderedReqs}
+            perspective="payee"
+            loading={loadingReqIds}
+            onChanged={refetchReqs}
+            emptyState={
+              <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
+                <p className="text-ink/60">You haven&apos;t requested any streams yet.</p>
+                <button
+                  onClick={() => setShowRequest(true)}
+                  className="mt-3 text-sm font-medium text-volt transition-colors hover:text-volt-bright"
+                >
+                  Request your first stream
+                </button>
+              </div>
+            }
+          />
+        )}
       </main>
+
+      {showRequest && (
+        <RequestStreamModal
+          onClose={() => setShowRequest(false)}
+          onSuccess={() => {
+            setShowRequest(false);
+            setView("requests");
+            refetchReqs();
+          }}
+        />
+      )}
     </div>
   );
 }

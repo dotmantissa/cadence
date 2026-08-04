@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, X, SlidersHorizontal } from "lucide-react";
+import { Search, X, SlidersHorizontal, FileText, Loader2 } from "lucide-react";
 import { StreamCard } from "./StreamCard";
 import { StreamReceiptModal } from "./StreamReceiptModal";
 import { type StreamMeta } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 
-type Filter = "ongoing" | "ended" | "all";
+type Filter = "ongoing" | "scheduled" | "ended" | "all";
 type Identity = { username: string | null; displayName: string | null };
 
 interface Props {
@@ -26,9 +26,15 @@ interface Props {
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "ongoing", label: "Ongoing" },
+  { key: "scheduled", label: "Scheduled" },
   { key: "ended", label: "Ended" },
   { key: "all", label: "All" },
 ];
+
+/** A stream is active on-chain but not yet flowing when its start is in the future. */
+function isScheduled(s: StreamMeta, nowSec: number): boolean {
+  return s.active && Number(s.startTime) > nowSec;
+}
 
 /** Local end-of-day epoch (ms) for an inclusive "to" date bound. */
 function endOfDay(dateStr: string): number {
@@ -65,6 +71,7 @@ export function StreamCollection({
   const [toDate, setToDate] = useState("");
   const [receipt, setReceipt] = useState<StreamMeta | null>(null);
   const [identities, setIdentities] = useState<Record<string, Identity>>({});
+  const [statementBusy, setStatementBusy] = useState(false);
 
   const counterpartyOf = (s: StreamMeta) =>
     (perspective === "employer" ? s.employee : s.employer).toLowerCase();
@@ -95,9 +102,16 @@ export function StreamCollection({
   }, [cpKey, authenticated]);
 
   const counts = useMemo(() => {
+    const nowSec = Math.floor(Date.now() / 1000);
     let ongoing = 0;
-    for (const s of streams) if (s.active) ongoing++;
-    return { ongoing, ended: streams.length - ongoing, all: streams.length };
+    let scheduled = 0;
+    let ended = 0;
+    for (const s of streams) {
+      if (!s.active) ended++;
+      else if (Number(s.startTime) > nowSec) scheduled++;
+      else ongoing++;
+    }
+    return { ongoing, scheduled, ended, all: streams.length };
   }, [streams]);
 
   const hasDateFilter = fromDate !== "" || toDate !== "";
@@ -107,9 +121,13 @@ export function StreamCollection({
     const q = query.trim().toLowerCase();
     const from = fromDate ? startOfDay(fromDate) : null;
     const to = toDate ? endOfDay(toDate) : null;
+    const nowSec = Math.floor(Date.now() / 1000);
 
     return streams.filter((s) => {
-      if (filter === "ongoing" && !s.active) return false;
+      const scheduled = isScheduled(s, nowSec);
+      // "ongoing" = active and already flowing; "scheduled" = active but future.
+      if (filter === "ongoing" && (!s.active || scheduled)) return false;
+      if (filter === "scheduled" && !scheduled) return false;
       if (filter === "ended" && s.active) return false;
 
       // Date range on the opened-at time.
@@ -141,6 +159,28 @@ export function StreamCollection({
   // No streams on this wallet at all — the page's own empty prompt.
   if (!loading && streams.length === 0) {
     return <>{emptyState}</>;
+  }
+
+  // Every stream in this view shares one account on the perspective side.
+  const account =
+    streams.length > 0
+      ? perspective === "employer"
+        ? streams[0].employer
+        : streams[0].employee
+      : undefined;
+
+  async function downloadStatement() {
+    if (!account || visible.length === 0) return;
+    setStatementBusy(true);
+    try {
+      // Dynamic import keeps jspdf out of the initial page bundle.
+      const { generateStatementPdf } = await import("@/lib/statement");
+      generateStatementPdf({ account, perspective, streams: visible, identities });
+    } catch {
+      /* generation failed silently — the on-screen list is unaffected */
+    } finally {
+      setStatementBusy(false);
+    }
   }
 
   return (
@@ -205,6 +245,23 @@ export function StreamCollection({
               </span>
             )}
           </button>
+          <button
+            onClick={downloadStatement}
+            disabled={statementBusy || visible.length === 0}
+            className="inline-flex h-10 items-center gap-2 rounded-full border border-ink/10 bg-paper-warm px-4 text-sm font-medium text-ink/70 transition-colors hover:border-ink/25 hover:text-ink disabled:opacity-40"
+            title={
+              hasDateFilter || query
+                ? "Statement of the streams matching your current filters"
+                : "Statement of all your streams"
+            }
+          >
+            {statementBusy ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <FileText size={15} />
+            )}
+            Statement
+          </button>
         </div>
       </div>
 
@@ -263,6 +320,8 @@ export function StreamCollection({
               ? "No streams match those filters."
               : filter === "ended"
               ? "No ended streams yet."
+              : filter === "scheduled"
+              ? "No scheduled streams right now."
               : "No ongoing streams right now."}
           </p>
         </div>

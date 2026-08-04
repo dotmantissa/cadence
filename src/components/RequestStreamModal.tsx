@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useCreateStream, useApproveUsdc, useUsdcAllowance, useUsdcBalance } from "@/hooks/usePayroll";
-import { parseUsdc, formatUsdc, shortenAddress } from "@/lib/utils";
-import { useAccount } from "wagmi";
-import { cn } from "@/lib/utils";
+import { useRequestActions } from "@/hooks/usePayroll";
+import { parseUsdc, formatUsdc, shortenAddress, cn } from "@/lib/utils";
 import { useApi } from "@/hooks/useApi";
 import { validateUsername } from "@/lib/username";
 import { AtSign, Wallet, Check, Loader2, X, Clock, CalendarClock } from "lucide-react";
@@ -21,17 +19,22 @@ const field =
   "w-full rounded-2xl border border-ink/10 bg-paper-warm px-3.5 py-3 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20";
 const labelCls = "mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink/50";
 
-export function CreateStreamModal({ onClose, onSuccess }: Props) {
-  const { address } = useAccount();
+/**
+ * The payee side of negotiation: ask someone to open a stream that pays *you*.
+ * No funds move here — the request is a proposal the payer later funds (accept)
+ * or escrows a counter to. Mirrors {@link CreateStreamModal}'s terms UI, minus
+ * the balance/approval machinery, since the requester isn't paying.
+ */
+export function RequestStreamModal({ onClose, onSuccess }: Props) {
   const { api } = useApi();
-  const [mode, setMode] = useState<Mode>("address");
-  const [employee, setEmployee] = useState("");
+  const [mode, setMode] = useState<Mode>("username");
+  const [payer, setPayer] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
   const [streamDays, setStreamDays] = useState("30");
   const [invoiceRef, setInvoiceRef] = useState("");
   const [startMode, setStartMode] = useState<"now" | "schedule">("now");
   const [startAtLocal, setStartAtLocal] = useState("");
-  const [txStatus, setTxStatus] = useState<"idle" | "approving" | "creating">("idle");
+  const [submitting, setSubmitting] = useState(false);
   const [txError, setTxError] = useState<string | null>(null);
 
   // Handle → wallet resolution. Only used in username mode.
@@ -44,24 +47,18 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const [resolveError, setResolveError] = useState<string | null>(null);
   const resolveSeq = useRef(0);
 
-  const { data: balance } = useUsdcBalance(address);
-  const { data: allowance } = useUsdcAllowance(address);
-  const { approve } = useApproveUsdc();
-  const { createStream } = useCreateStream();
+  const { requestStream } = useRequestActions();
 
   const days = Math.max(1, parseInt(streamDays) || 30);
   const depositAmount = parseUsdc(totalAmount);
   const dailyRateRaw = depositAmount > 0n ? depositAmount / BigInt(days) : 0n;
   const ratePerSecond = dailyRateRaw / 86400n;
 
-  // Scheduling. "now" streams pass 0 (contract clamps to block time); a
-  // scheduled stream passes a future unix timestamp so it escrows now but does
-  // not accrue until then.
   const scheduledMs = startMode === "schedule" && startAtLocal ? new Date(startAtLocal).getTime() : NaN;
-  const scheduledInvalid = startMode === "schedule" && (!startAtLocal || isNaN(scheduledMs) || scheduledMs <= Date.now());
+  const scheduledInvalid =
+    startMode === "schedule" && (!startAtLocal || isNaN(scheduledMs) || scheduledMs <= Date.now());
   const startAt: bigint =
     startMode === "schedule" && !isNaN(scheduledMs) ? BigInt(Math.floor(scheduledMs / 1000)) : 0n;
-  // `min` for the datetime-local input: one minute out, in local wall time.
   const minLocal = (() => {
     const d = new Date(Date.now() + 60_000);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -70,11 +67,8 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
     )}`;
   })();
 
-  const trimmed = employee.trim();
+  const trimmed = payer.trim();
   const isRawAddress = trimmed.startsWith("0x") && trimmed.length === 42;
-
-  // The wallet we'll actually stream to: the typed address in address mode, or
-  // the resolved handle's wallet in username mode.
   const recipient: `0x${string}` | null =
     mode === "address"
       ? isRawAddress
@@ -116,72 +110,43 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employee, mode]);
+  }, [payer, mode]);
 
   function switchMode(next: Mode) {
     if (next === mode) return;
     setMode(next);
-    setEmployee("");
+    setPayer("");
     setResolved(null);
     setResolveError(null);
   }
 
-  const needsApproval = depositAmount > 0n && (!allowance || allowance < depositAmount);
-  const insufficientBalance =
-    balance !== undefined && depositAmount > 0n && balance < depositAmount;
-  const isPending = txStatus !== "idle";
   const canSubmit =
-    recipient !== null &&
-    depositAmount > 0n &&
-    ratePerSecond > 0n &&
-    !insufficientBalance &&
-    !scheduledInvalid;
+    recipient !== null && depositAmount > 0n && ratePerSecond > 0n && !scheduledInvalid && !submitting;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!recipient) return;
-    if (depositAmount === 0n || ratePerSecond === 0n) return;
+    if (!recipient || depositAmount === 0n || ratePerSecond === 0n) return;
 
     setTxError(null);
+    setSubmitting(true);
     try {
-      if (needsApproval) {
-        setTxStatus("approving");
-        await approve(depositAmount);
-      }
-      setTxStatus("creating");
-      await createStream(recipient, ratePerSecond, depositAmount, invoiceRef, startAt);
+      await requestStream(recipient, ratePerSecond, depositAmount, invoiceRef, startAt);
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
       const e = err as { shortMessage?: string; message?: string };
       setTxError(e?.shortMessage ?? e?.message ?? "Wallet rejected the transaction");
-      setTxStatus("idle");
+      setSubmitting(false);
     }
   }
 
   return (
-    <Modal
-      title="Open a stream"
-      onClose={onClose}
-      closeDisabled={isPending}
-      dismissable={false}
-    >
+    <Modal title="Request a stream" onClose={onClose} closeDisabled={submitting} dismissable={false}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className={labelCls}>Who is getting paid</label>
+          <label className={labelCls}>Who should pay you</label>
 
-          {/* Streamer picks how to name the recipient. */}
           <div className="mb-2 inline-flex rounded-full border border-ink/10 bg-paper-warm p-0.5 text-xs font-medium">
-            <button
-              type="button"
-              onClick={() => switchMode("address")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors",
-                mode === "address" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
-              )}
-            >
-              <Wallet size={13} /> Wallet address
-            </button>
             <button
               type="button"
               onClick={() => switchMode("username")}
@@ -192,13 +157,23 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
             >
               <AtSign size={13} /> Username
             </button>
+            <button
+              type="button"
+              onClick={() => switchMode("address")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors",
+                mode === "address" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
+              )}
+            >
+              <Wallet size={13} /> Wallet address
+            </button>
           </div>
 
           {mode === "address" ? (
             <input
               type="text"
-              value={employee}
-              onChange={(e) => setEmployee(e.target.value)}
+              value={payer}
+              onChange={(e) => setPayer(e.target.value)}
               placeholder="0x wallet address"
               className={cn(field, "font-mono")}
               required
@@ -211,11 +186,9 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                 </span>
                 <input
                   type="text"
-                  value={employee}
-                  onChange={(e) =>
-                    setEmployee(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))
-                  }
-                  placeholder="satoshi_streams"
+                  value={payer}
+                  onChange={(e) => setPayer(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  placeholder="acme_payroll"
                   autoComplete="off"
                   autoCapitalize="off"
                   spellCheck={false}
@@ -225,19 +198,14 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                 <span className="absolute right-3 top-1/2 -translate-y-1/2">
                   {resolving && <Loader2 size={15} className="animate-spin text-ink/40" />}
                   {!resolving && resolved && <Check size={15} className="text-emerald-500" />}
-                  {!resolving && resolveError && trimmed !== "" && (
-                    <X size={15} className="text-red-500" />
-                  )}
+                  {!resolving && resolveError && trimmed !== "" && <X size={15} className="text-red-500" />}
                 </span>
               </div>
               <div className="mt-1.5 min-h-[1rem] text-xs">
                 {resolved && (
                   <span className="text-ink/55">
-                    Paying{" "}
-                    {resolved.displayName ? `${resolved.displayName} · ` : ""}
-                    <span className="font-mono text-ink/70">
-                      {shortenAddress(resolved.walletAddress)}
-                    </span>
+                    Asking {resolved.displayName ? `${resolved.displayName} · ` : ""}
+                    <span className="font-mono text-ink/70">{shortenAddress(resolved.walletAddress)}</span>
                   </span>
                 )}
                 {!resolved && resolveError && trimmed !== "" && (
@@ -264,24 +232,6 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                 required
               />
             </div>
-            {/* Balance, highlighted right under the amount it's checked against. */}
-            <p className="mt-1.5 text-xs">
-              {balance === undefined ? (
-                <span className="inline-flex items-center gap-1.5 text-ink/40">
-                  <Loader2 size={11} className="animate-spin" /> checking balance…
-                </span>
-              ) : (
-                <span
-                  className={cn(
-                    "font-medium",
-                    insufficientBalance ? "text-red-500" : "text-volt"
-                  )}
-                >
-                  Balance: <span className="font-mono">${formatUsdc(balance)}</span>
-                  {insufficientBalance && " — not enough"}
-                </span>
-              )}
-            </p>
           </div>
           <div>
             <label className={labelCls}>Over how many days</label>
@@ -296,9 +246,8 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
           </div>
         </div>
 
-        {/* When it starts */}
         <div>
-          <label className={labelCls}>When it starts</label>
+          <label className={labelCls}>When it should start</label>
           <div className="mb-2 inline-flex rounded-full border border-ink/10 bg-paper-warm p-0.5 text-xs font-medium">
             <button
               type="button"
@@ -308,7 +257,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                 startMode === "now" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
               )}
             >
-              <Clock size={13} /> Start now
+              <Clock size={13} /> On accept
             </button>
             <button
               type="button"
@@ -335,7 +284,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                   <span className="text-red-500">Pick a time in the future.</span>
                 ) : startAtLocal ? (
                   <span className="text-ink/55">
-                    Funds are escrowed now; the stream begins flowing at the chosen time.
+                    If accepted, the stream begins flowing at the chosen time.
                   </span>
                 ) : (
                   <span className="text-ink/40">Choose when the stream should begin.</span>
@@ -348,7 +297,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         {depositAmount > 0n && (
           <div className="space-y-2 rounded-2xl border border-volt/15 bg-volt-wash px-4 py-3">
             <div className="flex justify-between text-sm">
-              <span className="text-panel/55">Streams at</span>
+              <span className="text-panel/55">You&apos;d be paid</span>
               <span className="font-mono font-medium text-panel">${formatUsdc(dailyRateRaw)} / day</span>
             </div>
             <div className="flex justify-between text-xs">
@@ -379,23 +328,10 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
 
         <button
           type="submit"
-          disabled={isPending || !canSubmit}
-          className={cn(
-            "w-full rounded-full py-3.5 text-sm font-medium transition-colors disabled:opacity-40",
-            needsApproval && !isPending
-              ? "border border-volt/30 bg-volt-wash text-volt hover:bg-volt/10"
-              : "bg-volt text-white hover:bg-volt-bright"
-          )}
+          disabled={!canSubmit}
+          className="w-full rounded-full bg-volt py-3.5 text-sm font-medium text-white transition-colors hover:bg-volt-bright disabled:opacity-40"
         >
-          {txStatus === "approving"
-            ? "Approving USDC, confirm in wallet"
-            : txStatus === "creating"
-            ? "Opening stream, confirm in wallet"
-            : insufficientBalance
-            ? "Not enough USDC"
-            : needsApproval
-            ? "Approve and open stream"
-            : "Open stream"}
+          {submitting ? "Sending request, confirm in wallet" : "Send request"}
         </button>
       </form>
     </Modal>

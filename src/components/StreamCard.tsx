@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowUpRight, Plus, X, Radio } from "lucide-react";
+import { ArrowUpRight, Plus, X, Radio, Clock } from "lucide-react";
 import { useStream, useAccrued, useRunway } from "@/hooks/usePayroll";
 import { StreamTicker } from "./StreamTicker";
 import { formatRunway, rateToDaily, rateToMonthly, shortenAddress } from "@/lib/utils";
@@ -25,9 +25,14 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
     return <div className="skeleton h-56 rounded-none" />;
   }
 
-  const [employer, employee, ratePerSecond, , , , active, invoiceRef] = stream;
+  const [employer, employee, ratePerSecond, startTime, , , active, invoiceRef] = stream;
+  // A scheduled stream is active on-chain but hasn't begun accruing yet.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const notStarted = active && Number(startTime) > nowSec;
+  const flowing = active && !notStarted;
+  const secondsUntilStart = Number(startTime) - nowSec;
   const runwaySec = Number(runwayRaw ?? 0n);
-  const lowRunway = active && runwaySec < 86400;
+  const lowRunway = flowing && runwaySec < 86400;
 
   return (
     <motion.div
@@ -52,7 +57,12 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
       <div className="relative flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            {active ? (
+            {notStarted ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-panel-foreground/80">
+                <Clock size={11} className="text-volt-bright" />
+                scheduled
+              </span>
+            ) : flowing ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-panel-foreground/80">
                 <Radio size={11} className="text-volt-bright" />
                 live
@@ -92,13 +102,17 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
 
       <div className="relative mt-6">
         <p className={cn("text-xs uppercase tracking-widest", active ? "text-panel-foreground/40" : "text-ink/40")}>
-          {perspective === "employee" ? "ready to withdraw" : "streamed so far"}
+          {notStarted
+            ? "scheduled to stream"
+            : perspective === "employee"
+            ? "ready to withdraw"
+            : "streamed so far"}
         </p>
         <div className="mt-1.5">
           <StreamTicker
             initialAccrued={accruedRaw ?? 0n}
             ratePerSecond={ratePerSecond}
-            active={active}
+            active={flowing}
             tone={active ? "ink" : "paper"}
           />
         </div>
@@ -110,7 +124,9 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
           active ? "border-white/10" : "border-ink/10"
         )}
       >
-        <span className={active ? "text-panel-foreground/50" : "text-ink/45"}>runway</span>
+        <span className={active ? "text-panel-foreground/50" : "text-ink/45"}>
+          {notStarted ? "begins in" : "runway"}
+        </span>
         <span
           className={cn(
             "font-mono",
@@ -121,12 +137,16 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
               : "text-volt-bright"
           )}
         >
-          {active ? formatRunway(runwaySec) : "done"}
+          {notStarted
+            ? formatRunway(Math.max(0, secondsUntilStart))
+            : flowing
+            ? formatRunway(runwaySec)
+            : "done"}
         </span>
       </div>
 
       <div className="relative mt-5 flex gap-2.5">
-        {perspective === "employee" && active && (
+        {perspective === "employee" && flowing && (
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}

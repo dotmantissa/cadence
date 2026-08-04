@@ -6,11 +6,21 @@ import { Plus, Wallet, Waves, Eye, EyeOff } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
 import { StreamCollection } from "@/components/StreamCollection";
+import { RequestCollection } from "@/components/RequestCollection";
 import { CreateStreamModal } from "@/components/CreateStreamModal";
 import { TopUpModal } from "@/components/TopUpModal";
+import { ViewTabs } from "@/components/ViewTabs";
 import { FlowField } from "@/components/motion/FlowField";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
-import { useEmployerStreams, useUsdcBalance, useCancelStream, useStreamsMeta } from "@/hooks/usePayroll";
+import {
+  useEmployerStreams,
+  useUsdcBalance,
+  useCancelStream,
+  useStreamsMeta,
+  usePayerRequests,
+  useRequestsMeta,
+  ReqStatus,
+} from "@/hooks/usePayroll";
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
 import { formatUsdc } from "@/lib/utils";
 
@@ -21,6 +31,7 @@ export default function EmployerPage() {
   const { cancel } = useCancelStream();
   const [hideBalance, toggleBalance] = useBalancePrivacy();
 
+  const [view, setView] = useState<"streams" | "requests">("streams");
   const [showCreate, setShowCreate] = useState(false);
   const [topUpStreamId, setTopUpStreamId] = useState<bigint | null>(null);
 
@@ -29,8 +40,28 @@ export default function EmployerPage() {
   const { streams, isLoading: loadingMeta } = useStreamsMeta(ordered);
   const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
 
+  // Requests addressed to this wallet (it is the payer), newest-first.
+  const { data: reqIds, isLoading: loadingReqIds, refetch: refetchReqs } = usePayerRequests(address);
+  const orderedReqs = useMemo(() => (reqIds ? [...reqIds].reverse() : []), [reqIds]);
+  const { requests } = useRequestsMeta(orderedReqs);
+  const openReqCount = useMemo(
+    () => requests.filter((r) => r.status === ReqStatus.Pending || r.status === ReqStatus.Countered).length,
+    [requests]
+  );
+
   const totalCount = ordered.length;
-  const activeCount = useMemo(() => streams.filter((s) => s.active).length, [streams]);
+  // "Ongoing" excludes scheduled streams (active on-chain but not yet flowing).
+  const { activeCount, scheduledCount } = useMemo(() => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    let active = 0;
+    let scheduled = 0;
+    for (const s of streams) {
+      if (!s.active) continue;
+      if (Number(s.startTime) > nowSec) scheduled++;
+      else active++;
+    }
+    return { activeCount: active, scheduledCount: scheduled };
+  }, [streams]);
 
   if (!connected) {
     return (
@@ -69,18 +100,18 @@ export default function EmployerPage() {
         {/* Balance strip */}
         <div className="relative mt-8 overflow-hidden rounded-none border border-ink/10 bg-panel p-7 text-panel-foreground">
           <FlowField tone="ink" density={0.9} />
-          <button
-            onClick={toggleBalance}
-            className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full text-panel-foreground/40 transition-colors hover:bg-white/10 hover:text-panel-foreground"
-            aria-label={hideBalance ? "Show balance" : "Hide balance"}
-            title={hideBalance ? "Show balance" : "Hide balance"}
-          >
-            {hideBalance ? <EyeOff size={15} /> : <Eye size={15} />}
-          </button>
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div>
               <div className="flex items-center gap-2 text-xs text-panel-foreground/50">
                 <Wallet size={13} /> USDC balance
+                <button
+                  onClick={toggleBalance}
+                  className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-full text-panel-foreground/40 transition-colors hover:bg-white/10 hover:text-panel-foreground"
+                  aria-label={hideBalance ? "Show balance" : "Hide balance"}
+                  title={hideBalance ? "Show balance" : "Hide balance"}
+                >
+                  {hideBalance ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
               </div>
               <p className="mt-2 font-mono text-4xl font-semibold tracking-tight">
                 {balance === undefined ? (
@@ -104,31 +135,58 @@ export default function EmployerPage() {
                 )}
               </p>
               <p className="mt-1 text-xs text-panel-foreground/40">
-                {loadingStreams ? "" : `${activeCount} ongoing`}
+                {loadingStreams
+                  ? ""
+                  : `${activeCount} ongoing${scheduledCount > 0 ? ` · ${scheduledCount} scheduled` : ""}`}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Streams */}
-        <StreamCollection
-          streams={streams}
-          perspective="employer"
-          loading={loadingStreams}
-          onCancel={(id) => cancel(id)}
-          onTopUp={(id) => setTopUpStreamId(id)}
-          emptyState={
-            <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
-              <p className="text-ink/60">No streams yet. The team is waiting.</p>
-              <button
-                onClick={() => setShowCreate(true)}
-                className="mt-3 text-sm font-medium text-volt transition-colors hover:text-volt-bright"
-              >
-                Open your first stream
-              </button>
-            </div>
-          }
+        {/* Streams / Requests */}
+        <ViewTabs
+          className="mt-10"
+          value={view}
+          onChange={setView}
+          streamCount={totalCount}
+          requestCount={openReqCount}
         />
+
+        {view === "streams" ? (
+          <StreamCollection
+            streams={streams}
+            perspective="employer"
+            loading={loadingStreams}
+            onCancel={(id) => cancel(id)}
+            onTopUp={(id) => setTopUpStreamId(id)}
+            emptyState={
+              <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
+                <p className="text-ink/60">No streams yet. The team is waiting.</p>
+                <button
+                  onClick={() => setShowCreate(true)}
+                  className="mt-3 text-sm font-medium text-volt transition-colors hover:text-volt-bright"
+                >
+                  Open your first stream
+                </button>
+              </div>
+            }
+          />
+        ) : (
+          <RequestCollection
+            ids={orderedReqs}
+            perspective="payer"
+            loading={loadingReqIds}
+            onChanged={refetchReqs}
+            emptyState={
+              <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
+                <p className="text-ink/60">No incoming stream requests.</p>
+                <p className="mt-1 text-sm text-ink/40">
+                  When someone asks you to open a stream, it lands here for you to accept or counter.
+                </p>
+              </div>
+            }
+          />
+        )}
       </main>
 
       {showCreate && (

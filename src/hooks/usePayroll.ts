@@ -219,12 +219,18 @@ export function useCreateStream() {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   return {
-    createStream: (employee: `0x${string}`, ratePerSecond: bigint, deposit: bigint, invoiceRef: string) =>
+    createStream: (
+      employee: `0x${string}`,
+      ratePerSecond: bigint,
+      deposit: bigint,
+      invoiceRef: string,
+      startAt: bigint = 0n
+    ) =>
       writeContractAsync({
         address: PAYROLL_ADDRESS,
         abi: PAYROLL_ABI,
         functionName: "createStream",
-        args: [employee, ratePerSecond, deposit, invoiceRef],
+        args: [employee, ratePerSecond, deposit, invoiceRef, startAt],
       }),
     isPending,
     isConfirming,
@@ -251,5 +257,183 @@ export function useApproveUsdc() {
     isSuccess,
     error,
     hash,
+  };
+}
+
+// ---- Stream requests + negotiation -----------------------------------------
+
+/** On-chain request lifecycle status. Order matches the Solidity enum. */
+export const ReqStatus = {
+  Pending: 0,
+  Countered: 1,
+  Accepted: 2,
+  Rejected: 3,
+  Cancelled: 4,
+  Expired: 5,
+} as const;
+export type ReqStatusValue = (typeof ReqStatus)[keyof typeof ReqStatus];
+
+/** Decoded shape of a `requests(id)` tuple, keyed for readability. */
+export interface RequestMeta {
+  id: bigint;
+  payee: `0x${string}`;
+  payer: `0x${string}`;
+  ratePerSecond: bigint;
+  deposit: bigint;
+  startAt: bigint;
+  counterDeadline: bigint;
+  status: ReqStatusValue;
+  invoiceRef: string;
+  streamId: bigint;
+}
+
+/**
+ * Batched multicall for many requests at once, mirroring {@link useStreamsMeta}:
+ * stable query key, kept previous data, and a per-id last-good cache so a flaky
+ * poll never blanks a request card.
+ */
+export function useRequestsMeta(ids: readonly bigint[] | undefined) {
+  const idKey = (ids ?? []).map((i) => i.toString()).join(",");
+
+  const contracts = useMemo(
+    () =>
+      (ids ?? []).map((id) => ({
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "requests" as const,
+        args: [id] as const,
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idKey]
+  );
+
+  const query = useReadContracts({
+    contracts,
+    query: {
+      enabled: !!ids && ids.length > 0,
+      refetchInterval: 5000,
+      placeholderData: keepPreviousData,
+    },
+  });
+
+  const cache = useRef(new Map<string, RequestMeta>());
+
+  const requests = useMemo<RequestMeta[]>(() => {
+    const list = ids ?? [];
+    const data = query.data ?? [];
+    return list
+      .map((id, i) => {
+        const key = id.toString();
+        const res = data[i];
+        if (res && res.status === "success" && res.result) {
+          const [payee, payer, ratePerSecond, deposit, startAt, counterDeadline, status, invoiceRef, streamId] =
+            res.result as unknown as [
+              `0x${string}`,
+              `0x${string}`,
+              bigint,
+              bigint,
+              bigint,
+              bigint,
+              number,
+              string,
+              bigint
+            ];
+          const meta: RequestMeta = {
+            id,
+            payee,
+            payer,
+            ratePerSecond,
+            deposit,
+            startAt,
+            counterDeadline,
+            status: status as ReqStatusValue,
+            invoiceRef,
+            streamId,
+          };
+          cache.current.set(key, meta);
+          return meta;
+        }
+        return cache.current.get(key) ?? null;
+      })
+      .filter((r): r is RequestMeta => r !== null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.data, idKey]);
+
+  return { requests, isLoading: query.isLoading, refetch: query.refetch };
+}
+
+/** Request IDs addressed to a payer (incoming, to accept/counter/reject). */
+export function usePayerRequests(payer: `0x${string}` | undefined) {
+  return useReadContract({
+    address: PAYROLL_ADDRESS,
+    abi: PAYROLL_ABI,
+    functionName: "getPayerRequests",
+    args: payer ? [payer] : undefined,
+    query: { enabled: !!payer, refetchInterval: 5000 },
+  });
+}
+
+/** Request IDs a payee created (outgoing, to cancel / await response). */
+export function usePayeeRequests(payee: `0x${string}` | undefined) {
+  return useReadContract({
+    address: PAYROLL_ADDRESS,
+    abi: PAYROLL_ABI,
+    functionName: "getPayeeRequests",
+    args: payee ? [payee] : undefined,
+    query: { enabled: !!payee, refetchInterval: 5000 },
+  });
+}
+
+/**
+ * All request/negotiation write actions in one hook, sharing a single tx state.
+ * A given request card only drives one action at a time, so shared
+ * pending/confirming is fine and keeps the surface small. All are async so the
+ * caller can chain a USDC approval first where the action moves funds
+ * (`acceptRequest` funds the stream; `counterRequest` escrows the new deposit).
+ */
+export function useRequestActions() {
+  const { writeContractAsync, data: hash, isPending, error, reset } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const call = (functionName: string, args: readonly unknown[]) =>
+    writeContractAsync({
+      address: PAYROLL_ADDRESS,
+      abi: PAYROLL_ABI,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      functionName: functionName as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      args: args as any,
+    });
+
+  return {
+    /** Payee opens a request asking `payer` to fund a stream. No funds move. */
+    requestStream: (
+      payer: `0x${string}`,
+      ratePerSecond: bigint,
+      deposit: bigint,
+      invoiceRef: string,
+      startAt: bigint = 0n
+    ) => call("requestStream", [payer, ratePerSecond, deposit, invoiceRef, startAt]),
+    /** Payer accepts a pending request as-is (requires prior USDC approval). */
+    acceptRequest: (requestId: bigint) => call("acceptRequest", [requestId]),
+    /** Payer counters with new terms, escrowing the new deposit (needs approval). */
+    counterRequest: (requestId: bigint, newRate: bigint, newDeposit: bigint, newStartAt: bigint = 0n) =>
+      call("counterRequest", [requestId, newRate, newDeposit, newStartAt]),
+    /** Payee accepts the payer's counter — starts the stream instantly. */
+    acceptCounter: (requestId: bigint) => call("acceptCounter", [requestId]),
+    /** Payee rejects the counter; escrow refunds to the payer. */
+    rejectCounter: (requestId: bigint) => call("rejectCounter", [requestId]),
+    /** Anyone settles an expired counter, refunding the payer's escrow. */
+    reclaimExpiredCounter: (requestId: bigint) => call("reclaimExpiredCounter", [requestId]),
+    /** Payer declines a pending request. No funds were moved. */
+    rejectRequest: (requestId: bigint) => call("rejectRequest", [requestId]),
+    /** Payee cancels their own pending request. */
+    cancelRequest: (requestId: bigint) => call("cancelRequest", [requestId]),
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+    hash,
+    reset,
   };
 }

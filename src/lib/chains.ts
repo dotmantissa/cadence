@@ -9,9 +9,31 @@ export const arcTestnet = defineChain({
     decimals: 18,
   },
   rpcUrls: {
-    // Canonical Circle-run endpoint (docs: docs.arc.io/arc/references/rpc-endpoints).
-    default: { http: ["https://rpc.testnet.arc.io"], webSocket: ["wss://rpc.testnet.arc.io"] },
-    public: { http: ["https://rpc.testnet.arc.io"], webSocket: ["wss://rpc.testnet.arc.io"] },
+    // Browser-facing endpoints MUST answer the CORS preflight, or every viem read
+    // (application/json POST) is blocked and the UI flickers empty on each poll.
+    //
+    // Circle's "primary" host rpc.testnet.arc.io returns 400 with NO
+    // Access-Control-Allow-* headers on OPTIONS, so it is unusable from the browser
+    // even though server-side curl to it returns 200 (which masked this in probes).
+    // The three docs-listed provider mirrors below all pass preflight
+    // (blockdaemon: `*`; drpc/quicknode: echo Origin). We list several so wagmi can
+    // fall back if one provider is briefly unavailable. See docs.arc.io/arc/references/rpc-endpoints.
+    default: {
+      http: [
+        "https://rpc.drpc.testnet.arc.io",
+        "https://rpc.quicknode.testnet.arc.io",
+        "https://rpc.blockdaemon.testnet.arc.io",
+      ],
+      webSocket: ["wss://rpc.drpc.testnet.arc.io"],
+    },
+    public: {
+      http: [
+        "https://rpc.drpc.testnet.arc.io",
+        "https://rpc.quicknode.testnet.arc.io",
+        "https://rpc.blockdaemon.testnet.arc.io",
+      ],
+      webSocket: ["wss://rpc.drpc.testnet.arc.io"],
+    },
   },
   blockExplorers: {
     default: { name: "ArcScan", url: "https://testnet.arcscan.app" },

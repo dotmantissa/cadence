@@ -1,4 +1,4 @@
-import { http } from "wagmi";
+import { http, fallback } from "wagmi";
 import { createConfig } from "@privy-io/wagmi";
 import { arcTestnet } from "./chains";
 
@@ -11,12 +11,16 @@ import { arcTestnet } from "./chains";
 export const wagmiConfig = createConfig({
   chains: [arcTestnet],
   transports: {
-    // batch: collapse reads fired in the same tick into one JSON-RPC batch, and
-    // let viem route view calls through Multicall3 — a page of stream cards then
-    // costs ~1-2 round trips instead of one per read.
-    [arcTestnet.id]: http(arcTestnet.rpcUrls.default.http[0], {
-      batch: true,
-    }),
+    // A CORS-friendly fallback across all three docs-listed .io providers: if the
+    // first briefly errors/rate-limits, viem transparently retries the next rather
+    // than surfacing a read failure (which would collapse the stream-id list to
+    // empty and unmount every card — the flicker loop). batch:true still collapses
+    // same-tick reads into one JSON-RPC batch routed through Multicall3, so a page
+    // of cards costs ~1-2 round trips, not one per read.
+    [arcTestnet.id]: fallback(
+      arcTestnet.rpcUrls.default.http.map((url) => http(url, { batch: true })),
+      { rank: false }
+    ),
   },
   batch: {
     multicall: true,

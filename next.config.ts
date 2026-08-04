@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // RainbowKit / wagmi need this for some polyfills
   webpack: (config) => {
+    // Keep node-only modules out of client bundles (wagmi/viem polyfills).
     config.resolve.fallback = { fs: false, net: false, tls: false };
     return config;
   },

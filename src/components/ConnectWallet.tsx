@@ -1,22 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { usePrivy, useLogin, useLogout, useWallets } from "@privy-io/react-auth";
+import { useAccount } from "wagmi";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wallet, LogOut, Check } from "lucide-react";
+import { Wallet, LogOut, Loader2 } from "lucide-react";
 import { shortenAddress } from "@/lib/utils";
 
+/**
+ * Privy-backed connect button. One entry point for both routes: connecting an
+ * external wallet and logging in with email. The generate-or-import choice for
+ * email users is handled globally by <WalletOnboarding />.
+ */
 export function ConnectWallet() {
-  const { address, isConnected } = useAccount();
-  const { connect, isPending } = useConnect();
-  const { disconnect } = useDisconnect();
+  const { ready, authenticated } = usePrivy();
+  const { login } = useLogin();
+  const { logout } = useLogout();
+  const { wallets } = useWallets();
+  const { address: wagmiAddress } = useAccount();
   const [hover, setHover] = useState(false);
 
-  if (isConnected && address) {
+  const address =
+    wagmiAddress ?? (wallets[0]?.address as `0x${string}` | undefined);
+
+  if (!ready) {
+    return (
+      <span className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/50 px-4 py-2 text-sm text-ink/40">
+        <Loader2 size={14} className="animate-spin" />
+        <span className="font-mono">warming up</span>
+      </span>
+    );
+  }
+
+  if (authenticated && address) {
     return (
       <button
-        onClick={() => disconnect()}
+        onClick={() => logout()}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         className="group inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-4 py-2 font-mono text-sm text-ink transition-colors hover:border-black/20"
@@ -34,7 +53,7 @@ export function ConnectWallet() {
               exit={{ opacity: 0, y: -4 }}
               className="inline-flex items-center gap-1.5"
             >
-              <LogOut size={13} /> Disconnect
+              <LogOut size={13} /> Sign out
             </motion.span>
           ) : (
             <motion.span
@@ -54,19 +73,10 @@ export function ConnectWallet() {
   return (
     <motion.button
       whileTap={{ scale: 0.96 }}
-      onClick={() => connect({ connector: injected() })}
-      disabled={isPending}
-      className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-ink-soft disabled:opacity-50"
+      onClick={() => login()}
+      className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-ink-soft"
     >
-      {isPending ? (
-        <>
-          <Check size={15} className="animate-spin" /> Waking the wallet
-        </>
-      ) : (
-        <>
-          <Wallet size={15} /> Connect wallet
-        </>
-      )}
+      <Wallet size={15} /> Connect
     </motion.button>
   );
 }

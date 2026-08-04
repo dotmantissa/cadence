@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount } from "wagmi";
 import { motion } from "framer-motion";
 import { Plus, Wallet, Waves } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
@@ -9,12 +8,13 @@ import { WalletGate } from "@/components/WalletGate";
 import { StreamCard } from "@/components/StreamCard";
 import { CreateStreamModal } from "@/components/CreateStreamModal";
 import { TopUpModal } from "@/components/TopUpModal";
-import { LiquidBackground } from "@/components/motion/LiquidBackground";
+import { FlowField } from "@/components/motion/FlowField";
+import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { useEmployerStreams, useUsdcBalance, useCancelStream } from "@/hooks/usePayroll";
 import { formatUsdc } from "@/lib/utils";
 
 export default function EmployerPage() {
-  const { address, isConnected } = useAccount();
+  const { address, connected } = useActiveAddress();
   const { data: streams, refetch } = useEmployerStreams(address);
   const { data: balance } = useUsdcBalance(address);
   const { cancel } = useCancelStream();
@@ -22,7 +22,7 @@ export default function EmployerPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [topUpStreamId, setTopUpStreamId] = useState<bigint | null>(null);
 
-  if (!isConnected) {
+  if (!connected) {
     return (
       <div className="min-h-screen bg-paper">
         <Navbar />
@@ -60,7 +60,7 @@ export default function EmployerPage() {
 
         {/* Balance strip */}
         <div className="relative mt-8 overflow-hidden rounded-4xl border border-black/10 bg-ink p-7 text-paper">
-          <LiquidBackground pull={0.06} intensity={0.9} tone="ink" />
+          <FlowField tone="ink" density={0.9} />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div>
               <div className="flex items-center gap-2 text-xs text-paper/50">

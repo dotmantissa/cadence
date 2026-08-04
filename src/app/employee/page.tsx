@@ -1,21 +1,21 @@
 "use client";
 
-import { useAccount } from "wagmi";
 import { Wallet } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
 import { StreamCard } from "@/components/StreamCard";
-import { LiquidBackground } from "@/components/motion/LiquidBackground";
+import { FlowField } from "@/components/motion/FlowField";
+import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { useEmployeeStreams, useUsdcBalance, useWithdraw } from "@/hooks/usePayroll";
 import { formatUsdc } from "@/lib/utils";
 
 export default function EmployeePage() {
-  const { address, isConnected } = useAccount();
+  const { address, connected } = useActiveAddress();
   const { data: streams, refetch } = useEmployeeStreams(address);
   const { data: balance } = useUsdcBalance(address);
   const { withdraw } = useWithdraw();
 
-  if (!isConnected) {
+  if (!connected) {
     return (
       <div className="min-h-screen bg-paper">
         <Navbar />
@@ -40,7 +40,7 @@ export default function EmployeePage() {
 
         {/* Wallet balance */}
         <div className="relative mt-8 overflow-hidden rounded-4xl border border-black/10 bg-ink p-7 text-paper">
-          <LiquidBackground pull={0.06} intensity={0.9} tone="ink" />
+          <FlowField tone="ink" density={0.9} />
           <div className="relative">
             <div className="flex items-center gap-2 text-xs text-paper/50">
               <Wallet size={13} /> in your wallet

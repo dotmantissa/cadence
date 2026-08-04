@@ -45,7 +45,7 @@ export function Modal({ title, onClose, closeDisabled, children, className = "" 
           exit={{ opacity: 0, y: 12, scale: 0.98 }}
           transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
           onClick={(e) => e.stopPropagation()}
-          className={`w-full max-w-md overflow-hidden rounded-4xl border border-ink/10 bg-paper p-6 shadow-[0_40px_100px_-40px_rgba(23,22,24,0.5)] ${className}`}
+          className={`w-full max-w-md overflow-hidden rounded-none border border-ink/10 bg-paper p-6 shadow-[0_40px_100px_-40px_rgba(23,22,24,0.5)] ${className}`}
         >
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold tracking-tightest text-ink">{title}</h2>

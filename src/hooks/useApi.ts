@@ -62,6 +62,12 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ username }),
       }),
+    resolveUsername: (u: string) =>
+      request<{
+        walletAddress: string;
+        username: string | null;
+        displayName: string | null;
+      }>(`/api/resolve?u=${encodeURIComponent(u)}`),
 
     listPayees: () => request<{ payees: Payee[] }>("/api/payees"),
     addPayee: (input: {

@@ -21,7 +21,7 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
   const { data: runwayRaw } = useRunway(streamId);
 
   if (!stream) {
-    return <div className="skeleton h-56 rounded-4xl" />;
+    return <div className="skeleton h-56 rounded-none" />;
   }
 
   const [employer, employee, ratePerSecond, , , , active, invoiceRef] = stream;
@@ -35,7 +35,7 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
       viewport={{ once: true, amount: 0.3 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        "group relative overflow-hidden rounded-4xl border p-6 transition-all duration-500 ease-liquid",
+        "group relative overflow-hidden rounded-none border p-6 transition-all duration-500 ease-liquid",
         active
           ? "border-ink/10 bg-panel text-panel-foreground shadow-[0_24px_70px_-30px_rgba(23,22,24,0.55)]"
           : "border-ink/10 bg-paper-warm text-ink opacity-80"

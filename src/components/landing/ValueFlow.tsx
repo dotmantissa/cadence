@@ -249,7 +249,7 @@ export function ValueFlow() {
   const L = layout(horizontal);
 
   return (
-    <div className="relative h-[460px] w-full overflow-hidden rounded-4xl border border-white/10 bg-panel sm:h-[520px] lg:h-[560px]">
+    <div className="relative h-[460px] w-full overflow-hidden rounded-none border border-white/10 bg-panel sm:h-[520px] lg:h-[560px]">
       {/* depth glows (CSS, not canvas) */}
       <div className="pointer-events-none absolute -left-10 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full bg-volt/25 blur-3xl" />
       <div className="pointer-events-none absolute right-0 top-0 h-56 w-56 rounded-full bg-volt-bright/10 blur-3xl" />
@@ -300,7 +300,7 @@ function TreasuryNode() {
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-      className="w-[172px] rounded-3xl border border-white/15 bg-white/[0.06] p-4 backdrop-blur-md sm:w-[200px]"
+      className="w-[172px] rounded-none border border-white/15 bg-white/[0.06] p-4 backdrop-blur-md sm:w-[200px]"
     >
       <div className="flex items-center gap-2">
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-volt text-white">

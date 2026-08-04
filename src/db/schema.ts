@@ -24,6 +24,9 @@ export const users = pgTable(
     // Public @handle. Nullable so existing rows backfill lazily; always stored
     // lowercase, so a plain unique index enforces case-insensitive uniqueness.
     username: text("username"),
+    // When the handle was last *changed* (not first set). Null until the first
+    // change, so a first-time set via the gate never starts the 14-day cooldown.
+    usernameChangedAt: timestamp("username_changed_at", { withTimezone: true }),
     // Primary wallet bound to the account (embedded or imported/connected).
     walletAddress: text("wallet_address"),
     email: text("email"),

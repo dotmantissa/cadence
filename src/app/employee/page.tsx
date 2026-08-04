@@ -39,7 +39,7 @@ export default function EmployeePage() {
         </div>
 
         {/* Wallet balance */}
-        <div className="relative mt-8 overflow-hidden rounded-4xl border border-ink/10 bg-panel p-7 text-panel-foreground">
+        <div className="relative mt-8 overflow-hidden rounded-none border border-ink/10 bg-panel p-7 text-panel-foreground">
           <FlowField tone="ink" density={0.9} />
           <div className="relative">
             <div className="flex items-center gap-2 text-xs text-panel-foreground/50">
@@ -54,7 +54,7 @@ export default function EmployeePage() {
 
         {/* Streams */}
         {!streams || streams.length === 0 ? (
-          <div className="mt-8 rounded-4xl border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
+          <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
             <p className="text-ink/60">No streams pointed at this wallet yet.</p>
             <p className="mt-1 text-sm text-ink/40">
               Ask whoever signs the checks to spin one up for you.

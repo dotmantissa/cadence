@@ -4,7 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "./index";
 import { users, payees, streamDrafts } from "./schema";
 import type { Caller } from "@/lib/privy-server";
-import { PROFILE_RESERVED } from "@/lib/username";
+import { PROFILE_RESERVED, USERNAME_COOLDOWN_MS } from "@/lib/username";
 
 /**
  * Fetch the users row for a caller, creating it on first sight and keeping the
@@ -86,16 +86,51 @@ export async function isUsernameAvailable(username: string): Promise<boolean> {
  * Claim a handle for a user. Writes lowercase and relies on the unique index to
  * settle races: if two people grab the same name at once, the loser gets a
  * 23505 and we report it as taken rather than throwing.
+ *
+ * Rate-limiting: a *change* (the row already has a handle) is allowed at most
+ * once every 14 days, measured from the last change. A first-time set — the
+ * blocking gate every new user passes through — is never a change, so it neither
+ * blocks nor starts the clock; the first later change is free and starts it.
+ * Re-submitting the exact same handle is a no-op, not a change.
  */
 export async function setUsername(
   userId: string,
   username: string
-): Promise<{ user: typeof users.$inferSelect } | { taken: true }> {
+): Promise<
+  | { user: typeof users.$inferSelect }
+  | { taken: true }
+  | { cooldown: true; nextAt: Date }
+> {
   const value = username.trim().toLowerCase();
+
+  const [current] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!current) throw new Error("user not found");
+
+  // Idempotent: setting the handle you already hold isn't a change.
+  if (current.username === value) return { user: current };
+
+  const isChange = current.username != null;
+  if (isChange && current.usernameChangedAt) {
+    const nextAt = new Date(
+      current.usernameChangedAt.getTime() + USERNAME_COOLDOWN_MS
+    );
+    if (nextAt.getTime() > Date.now()) return { cooldown: true, nextAt };
+  }
+
   try {
     const [row] = await db
       .update(users)
-      .set({ username: value, updatedAt: new Date() })
+      .set({
+        username: value,
+        updatedAt: new Date(),
+        // Start the cooldown only on a real change; a first-time set leaves it
+        // null so the user can still correct a fresh handle.
+        ...(isChange ? { usernameChangedAt: new Date() } : {}),
+      })
       .where(eq(users.id, userId))
       .returning();
     return { user: row };

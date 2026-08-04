@@ -9,6 +9,27 @@ export const USERNAME_MAX = 20;
 export const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 /**
+ * A handle may only be *changed* once per this window, measured from the last
+ * change. First-time set (the onboarding gate) is exempt and never starts it.
+ * Shared here so the server enforces it and the client can preview it.
+ */
+export const USERNAME_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Given when a handle was last changed (or null/undefined if never), the moment
+ * a further change becomes allowed, or null if it's allowed right now.
+ */
+export function usernameChangeUnlockAt(
+  changedAt: Date | string | null | undefined,
+  now: number
+): Date | null {
+  if (!changedAt) return null;
+  const at = changedAt instanceof Date ? changedAt : new Date(changedAt);
+  const next = at.getTime() + USERNAME_COOLDOWN_MS;
+  return next > now ? new Date(next) : null;
+}
+
+/**
  * Words we won't hand out. Mostly existing/near-future route segments so a
  * `/@handle` router can never collide with a real page, plus a few we'd rather
  * keep for ourselves.

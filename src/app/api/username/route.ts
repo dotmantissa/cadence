@@ -56,5 +56,17 @@ export async function POST(req: Request) {
   if ("taken" in result) {
     return NextResponse.json({ error: "already taken" }, { status: 409 });
   }
+  if ("cooldown" in result) {
+    const days = Math.ceil(
+      (result.nextAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)
+    );
+    return NextResponse.json(
+      {
+        error: `You can change your handle again in ${days} day${days === 1 ? "" : "s"}.`,
+        nextAt: result.nextAt.toISOString(),
+      },
+      { status: 429 }
+    );
+  }
   return NextResponse.json({ user: result.user });
 }

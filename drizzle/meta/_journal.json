@@ -15,6 +15,13 @@
       "when": 1785812717018,
       "tag": "0001_amused_nitro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785818017422,
+      "tag": "0002_mature_the_professor",
+      "breakpoints": true
     }
   ]
 }

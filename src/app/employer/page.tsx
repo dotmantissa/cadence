@@ -59,7 +59,7 @@ export default function EmployerPage() {
         </div>
 
         {/* Balance strip */}
-        <div className="relative mt-8 overflow-hidden rounded-4xl border border-ink/10 bg-panel p-7 text-panel-foreground">
+        <div className="relative mt-8 overflow-hidden rounded-none border border-ink/10 bg-panel p-7 text-panel-foreground">
           <FlowField tone="ink" density={0.9} />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div>
@@ -83,7 +83,7 @@ export default function EmployerPage() {
 
         {/* Streams */}
         {!streams || streams.length === 0 ? (
-          <div className="mt-8 rounded-4xl border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
+          <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
             <p className="text-ink/60">No streams yet. The team is waiting.</p>
             <button
               onClick={() => setShowCreate(true)}

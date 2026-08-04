@@ -90,7 +90,7 @@ export function WalletOnboarding() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: 0.4, ease: [0.34, 1.56, 0.64, 1] }}
-            className="relative w-full max-w-md overflow-hidden rounded-4xl border border-white/10 bg-panel p-7 text-panel-foreground shadow-[0_40px_120px_-30px_rgba(0,0,0,0.8)]"
+            className="relative w-full max-w-md overflow-hidden rounded-none border border-white/10 bg-panel p-7 text-panel-foreground shadow-[0_40px_120px_-30px_rgba(0,0,0,0.8)]"
           >
             <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-volt/30 blur-3xl" />
 

@@ -46,6 +46,16 @@ export function HowItFlows() {
       <div className="relative grid gap-5 md:grid-cols-2">
         {steps.map((s, i) => {
           const Icon = s.icon;
+          // In the 2x2 grid, round only the corner that faces the center where
+          // the four cards meet: 0=top-left→br, 1=top-right→bl, 2=bottom-left→tr,
+          // 3=bottom-right→tl. Square everywhere else, and fully square below md
+          // where the grid collapses to one column.
+          const meetingCorner = [
+            "md:rounded-br-4xl",
+            "md:rounded-bl-4xl",
+            "md:rounded-tr-4xl",
+            "md:rounded-tl-4xl",
+          ][i];
           return (
             <motion.div
               key={s.n}
@@ -53,7 +63,7 @@ export function HowItFlows() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.4 }}
               transition={{ delay: i * 0.1, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className="group relative overflow-hidden rounded-4xl border border-ink/10 bg-paper p-8 transition-colors hover:border-ink/20"
+              className={`group relative overflow-hidden rounded-none border border-ink/10 bg-paper p-8 transition-colors hover:border-ink/20 ${meetingCorner}`}
             >
               <div className="flex items-start justify-between">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-volt-wash text-volt transition-transform duration-500 ease-springy group-hover:scale-110">

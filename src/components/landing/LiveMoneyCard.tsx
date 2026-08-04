@@ -13,7 +13,7 @@ export function LiveMoneyCard() {
 
   return (
     <TiltCard max={8} className="relative w-full max-w-md [transform-style:preserve-3d]">
-      <div className="relative overflow-hidden rounded-4xl border border-ink/10 bg-panel p-7 text-panel-foreground shadow-[0_30px_80px_-30px_rgba(23,22,24,0.6)]">
+      <div className="relative overflow-hidden rounded-none border border-ink/10 bg-panel p-7 text-panel-foreground shadow-[0_30px_80px_-30px_rgba(23,22,24,0.6)]">
         {/* volt glow */}
         <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-volt/40 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-volt-bright/20 blur-3xl" />

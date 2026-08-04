@@ -124,7 +124,7 @@ export function FeatureCarousel() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true, amount: 0.3 }}
                     transition={{ delay: (i % 3) * 0.08, duration: 0.5 }}
-                    className="group h-full rounded-4xl border border-ink/10 bg-paper-warm p-7 transition-colors hover:border-volt/30"
+                    className="group h-full rounded-none border border-ink/10 bg-paper-warm p-7 transition-colors hover:border-volt/30"
                   >
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-panel text-volt-bright transition-transform duration-500 ease-springy group-hover:-rotate-6 group-hover:scale-110">
                       <Icon size={22} />

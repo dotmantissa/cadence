@@ -41,7 +41,7 @@ export function AudienceSplit() {
           >
             <Link href={s.href} className="group block h-full">
               <div
-                className={`relative flex h-full flex-col overflow-hidden rounded-5xl p-9 transition-all duration-500 ease-liquid sm:p-11 ${
+                className={`relative flex h-full flex-col overflow-hidden rounded-none p-9 transition-all duration-500 ease-liquid sm:p-11 ${
                   dark
                     ? "bg-panel text-panel-foreground"
                     : "bg-volt text-panel-foreground"

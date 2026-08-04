@@ -112,7 +112,7 @@ export default function Home() {
 
       {/* NUMBERS */}
       <section className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8 lg:py-28">
-        <div className="grid gap-8 rounded-5xl border border-ink/10 bg-paper p-10 sm:grid-cols-3 sm:p-14">
+        <div className="grid gap-8 rounded-none border border-ink/10 bg-paper p-10 sm:grid-cols-3 sm:p-14">
           {[
             { k: "350ms", v: "from hitting withdraw to the money being in your wallet" },
             { k: "every 1s", v: "the contract pushes a fresh slice of pay to your team" },

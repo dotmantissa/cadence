@@ -8,7 +8,7 @@ import { Button } from "@/components/Button";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { useApi } from "@/hooks/useApi";
 import { useProfileContext } from "@/components/ProfileProvider";
-import { validateUsername, USERNAME_MAX } from "@/lib/username";
+import { validateUsername, USERNAME_MAX, usernameChangeUnlockAt } from "@/lib/username";
 import { shortenAddress } from "@/lib/utils";
 
 /**
@@ -77,6 +77,10 @@ function UsernameField() {
   const current = user?.username ?? "";
   const dirty = value !== current;
 
+  // A change (not the first set) is rate-limited to once per 14 days.
+  const lockedUntil = usernameChangeUnlockAt(user?.usernameChangedAt, Date.now());
+  const locked = lockedUntil !== null;
+
   useEffect(() => {
     if (!dirty) {
       setStatus("idle");
@@ -131,6 +135,10 @@ function UsernameField() {
       if (/taken/i.test(msg)) {
         setStatus("taken");
         setReason("already taken");
+      } else if (/day|change your handle/i.test(msg)) {
+        // 14-day cooldown rejection from the server.
+        setStatus("invalid");
+        setReason(msg);
       } else {
         setReason("could not save, try again");
       }
@@ -140,11 +148,12 @@ function UsernameField() {
   }
 
   return (
-    <section className="rounded-3xl border border-ink/10 bg-paper-warm p-6">
+    <section className="rounded-none border border-ink/10 bg-paper-warm p-6">
       <label className="block">
         <span className="text-sm font-medium text-ink">Username</span>
         <span className="mt-0.5 block text-xs text-ink/45">
           Your public @handle. Lowercase letters, numbers, and underscores.
+          You can change it once every 14 days.
         </span>
         <div className="relative mt-3">
           <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink/40">
@@ -164,7 +173,8 @@ function UsernameField() {
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}
-            className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 pl-10 pr-11 font-mono text-sm text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-volt"
+            disabled={locked}
+            className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 pl-10 pr-11 font-mono text-sm text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-volt disabled:cursor-not-allowed disabled:opacity-60"
           />
           <span className="absolute right-3 top-1/2 -translate-y-1/2">
             {status === "checking" && (
@@ -180,20 +190,31 @@ function UsernameField() {
         </div>
       </label>
       <div className="mt-2 min-h-[1.25rem] text-xs">
-        {status === "available" && (
+        {locked && lockedUntil && (
+          <span className="text-ink/50">
+            Handle locked until{" "}
+            {lockedUntil.toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+            .
+          </span>
+        )}
+        {!locked && status === "available" && (
           <span className="text-emerald-600">@{value} is free.</span>
         )}
-        {(status === "taken" || status === "invalid") && reason && (
+        {!locked && (status === "taken" || status === "invalid") && reason && (
           <span className="text-red-500">{reason}</span>
         )}
-        {saved && !dirty && (
+        {!locked && saved && !dirty && (
           <span className="text-emerald-600">Saved.</span>
         )}
       </div>
       <div className="mt-3">
         <Button
           onClick={save}
-          disabled={!dirty || status !== "available" || busy}
+          disabled={locked || !dirty || status !== "available" || busy}
           variant="volt"
         >
           {busy ? (
@@ -240,7 +261,7 @@ function DisplayNameField() {
   }
 
   return (
-    <section className="rounded-3xl border border-ink/10 bg-paper-warm p-6">
+    <section className="rounded-none border border-ink/10 bg-paper-warm p-6">
       <label className="block">
         <span className="text-sm font-medium text-ink">Display name</span>
         <span className="mt-0.5 block text-xs text-ink/45">
@@ -282,7 +303,7 @@ function RoleField() {
     ];
 
   return (
-    <section className="rounded-3xl border border-ink/10 bg-paper-warm p-6">
+    <section className="rounded-none border border-ink/10 bg-paper-warm p-6">
       <p className="text-sm font-medium text-ink">Which side are you on?</p>
       <p className="mt-0.5 text-xs text-ink/45">
         Just picks your default dashboard. Switch anytime.
@@ -318,7 +339,7 @@ function ReadOnlyIdentity() {
   const wallet = user?.walletAddress ?? address ?? null;
 
   return (
-    <section className="rounded-3xl border border-ink/10 bg-paper-warm p-6">
+    <section className="rounded-none border border-ink/10 bg-paper-warm p-6">
       <p className="text-sm font-medium text-ink">Linked to your account</p>
       <div className="mt-4 space-y-3">
         <div className="flex items-center gap-3">

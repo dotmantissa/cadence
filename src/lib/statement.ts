@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import type { StreamMeta } from "@/hooks/usePayroll";
+import { streamMath } from "@/lib/stream-math";
 import { formatUsdc, shortenAddress } from "@/lib/utils";
 
 /** Brand palette, as PDF-friendly RGB tuples. */
@@ -20,10 +21,9 @@ export interface StatementOptions {
   identities?: Record<string, { username: string | null; displayName: string | null }>;
 }
 
-/** USDC (6dp) withdrawn to date, derived from the on-chain claim clock. */
-function withdrawnToDate(s: StreamMeta): bigint {
-  if (s.lastClaimTime <= s.startTime) return 0n;
-  return s.ratePerSecond * (s.lastClaimTime - s.startTime);
+/** USDC (6dp) total streamed to date — cumulative, never resets on withdrawal. */
+function streamedToDate(s: StreamMeta): bigint {
+  return streamMath(s).streamedSoFar;
 }
 
 function fmtDate(unixSeconds: bigint): string {
@@ -121,7 +121,7 @@ export function generateStatementPdf(opts: StatementOptions): void {
   const scheduled = streams.filter(isScheduled).length;
   const active = streams.filter((s) => s.active && !isScheduled(s)).length;
   const totalDeposited = streams.reduce((a, s) => a + s.deposit, 0n);
-  const totalStreamed = streams.reduce((a, s) => a + withdrawnToDate(s), 0n);
+  const totalStreamed = streams.reduce((a, s) => a + streamedToDate(s), 0n);
   const opened = streams.map((s) => s.startTime).filter((t) => t > 0n);
   const firstOpened = opened.length ? opened.reduce((a, b) => (a < b ? a : b)) : 0n;
   const lastOpened = opened.length ? opened.reduce((a, b) => (a > b ? a : b)) : 0n;
@@ -177,7 +177,7 @@ export function generateStatementPdf(opts: StatementOptions): void {
     counterpartyLabel(s, perspective, identities),
     s.invoiceRef || "—",
     `$${formatUsdc(s.deposit)}`,
-    `$${formatUsdc(withdrawnToDate(s))}`,
+    `$${formatUsdc(streamedToDate(s))}`,
     isScheduled(s) ? "Scheduled" : s.active ? "Ongoing" : "Ended",
   ]);
 

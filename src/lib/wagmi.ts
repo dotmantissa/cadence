@@ -21,5 +21,9 @@ export const wagmiConfig = createConfig({
   batch: {
     multicall: true,
   },
+  // Arc blocks are sub-second (~0.48s) with instant finality; viem's default
+  // 4s poll makes tx confirmations and watch-based reads feel laggy. 1s keeps
+  // waitForTransactionReceipt snappy without hammering the RPC.
+  pollingInterval: 1000,
   ssr: true,
 });

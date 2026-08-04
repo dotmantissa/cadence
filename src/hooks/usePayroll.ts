@@ -5,6 +5,20 @@ import { useReadContract, useReadContracts, useWriteContract, useWaitForTransact
 import { keepPreviousData } from "@tanstack/react-query";
 import { PAYROLL_ADDRESS, PAYROLL_ABI, USDC_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 
+/**
+ * Arc mandates `maxFeePerGas >= 20 Gwei` (its minimum base fee) or a transaction
+ * "may remain pending indefinitely or fail outright" (docs.arc.io/arc/references/gas-and-fees).
+ * The Privy embedded-wallet signer forwards fee fields verbatim without applying
+ * Arc-aware estimation, so a write with no fees set slips below the floor and the
+ * RPC rejects it ("HTTP Request Failed"). We pin EIP-1559 fees on every write;
+ * the effective cost is still base+tip (~$0.01) since maxFeePerGas is only a cap.
+ * Injected wallets accept these as editable defaults, so it's a no-op for them.
+ */
+const ARC_FEE = {
+  maxFeePerGas: 50_000_000_000n, // 50 Gwei — 2.5x the 20 Gwei floor for headroom
+  maxPriorityFeePerGas: 2_000_000_000n, // 2 Gwei tip to nudge inclusion
+} as const;
+
 /** Decoded shape of a `streams(id)` tuple, keyed for readability. */
 export interface StreamMeta {
   id: bigint;
@@ -99,36 +113,6 @@ export function useStreamsMeta(ids: readonly bigint[] | undefined) {
   return { streams, isLoading: query.isLoading, refetch: query.refetch };
 }
 
-export function useStream(streamId: bigint | undefined) {
-  return useReadContract({
-    address: PAYROLL_ADDRESS,
-    abi: PAYROLL_ABI,
-    functionName: "streams",
-    args: streamId !== undefined ? [streamId] : undefined,
-    query: { enabled: streamId !== undefined, refetchInterval: 2000 },
-  });
-}
-
-export function useAccrued(streamId: bigint | undefined) {
-  return useReadContract({
-    address: PAYROLL_ADDRESS,
-    abi: PAYROLL_ABI,
-    functionName: "accrued",
-    args: streamId !== undefined ? [streamId] : undefined,
-    query: { enabled: streamId !== undefined, refetchInterval: 1000 },
-  });
-}
-
-export function useRunway(streamId: bigint | undefined) {
-  return useReadContract({
-    address: PAYROLL_ADDRESS,
-    abi: PAYROLL_ABI,
-    functionName: "runway",
-    args: streamId !== undefined ? [streamId] : undefined,
-    query: { enabled: streamId !== undefined, refetchInterval: 5000 },
-  });
-}
-
 export function useEmployerStreams(employer: `0x${string}` | undefined) {
   return useReadContract({
     address: PAYROLL_ADDRESS,
@@ -175,7 +159,7 @@ export function useWithdraw() {
 
   return {
     withdraw: (streamId: bigint) =>
-      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "withdraw", args: [streamId] }),
+      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "withdraw", args: [streamId], ...ARC_FEE }),
     isPending,
     isConfirming,
     isSuccess,
@@ -190,7 +174,7 @@ export function useTopUp() {
 
   return {
     topUp: (streamId: bigint, amount: bigint) =>
-      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "topUp", args: [streamId, amount] }),
+      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "topUp", args: [streamId, amount], ...ARC_FEE }),
     isPending,
     isConfirming,
     isSuccess,
@@ -205,7 +189,7 @@ export function useCancelStream() {
 
   return {
     cancel: (streamId: bigint) =>
-      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "cancelStream", args: [streamId] }),
+      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "cancelStream", args: [streamId], ...ARC_FEE }),
     isPending,
     isConfirming,
     isSuccess,
@@ -231,6 +215,7 @@ export function useCreateStream() {
         abi: PAYROLL_ABI,
         functionName: "createStream",
         args: [employee, ratePerSecond, deposit, invoiceRef, startAt],
+        ...ARC_FEE,
       }),
     isPending,
     isConfirming,
@@ -251,6 +236,7 @@ export function useApproveUsdc() {
         abi: ERC20_ABI,
         functionName: "approve",
         args: [PAYROLL_ADDRESS, amount],
+        ...ARC_FEE,
       }),
     isPending,
     isConfirming,
@@ -403,6 +389,7 @@ export function useRequestActions() {
       functionName: functionName as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       args: args as any,
+      ...ARC_FEE,
     });
 
   return {

@@ -330,7 +330,7 @@ export function StreamCollection({
           {visible.map((s) => (
             <StreamCard
               key={s.id.toString()}
-              streamId={s.id}
+              stream={s}
               perspective={perspective}
               onOpenReceipt={() => setReceipt(s)}
               onWithdraw={onWithdraw ? () => onWithdraw(s.id) : undefined}

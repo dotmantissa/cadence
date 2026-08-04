@@ -2,13 +2,15 @@
 
 import { motion } from "framer-motion";
 import { ArrowUpRight, Plus, X, Radio, Clock } from "lucide-react";
-import { useStream, useAccrued, useRunway } from "@/hooks/usePayroll";
+import type { StreamMeta } from "@/hooks/usePayroll";
+import { streamMath } from "@/lib/stream-math";
 import { StreamTicker } from "./StreamTicker";
 import { formatRunway, rateToDaily, rateToMonthly, shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  streamId: bigint;
+  /** Fully-decoded stream, batch-fetched by the parent — no per-card reads. */
+  stream: StreamMeta;
   perspective: "employer" | "employee";
   onWithdraw?: () => void;
   onCancel?: () => void;
@@ -16,23 +18,19 @@ interface Props {
   onOpenReceipt?: () => void;
 }
 
-export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopUp, onOpenReceipt }: Props) {
-  const { data: stream } = useStream(streamId);
-  const { data: accruedRaw } = useAccrued(streamId);
-  const { data: runwayRaw } = useRunway(streamId);
+export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp, onOpenReceipt }: Props) {
+  const { id: streamId, employer, employee, ratePerSecond, startTime, active, invoiceRef } = stream;
 
-  if (!stream) {
-    return <div className="skeleton h-56 rounded-none" />;
-  }
-
-  const [employer, employee, ratePerSecond, startTime, , , active, invoiceRef] = stream;
-  // A scheduled stream is active on-chain but hasn't begun accruing yet.
+  // Accrued + runway are exact functions of the tuple we already have, so we
+  // derive them locally instead of firing three more polling reads per card.
   const nowSec = Math.floor(Date.now() / 1000);
-  const notStarted = active && Number(startTime) > nowSec;
-  const flowing = active && !notStarted;
+  const { notStarted, flowing, unclaimed, streamedSoFar, runwaySeconds } = streamMath(stream, nowSec);
   const secondsUntilStart = Number(startTime) - nowSec;
-  const runwaySec = Number(runwayRaw ?? 0n);
-  const lowRunway = flowing && runwaySec < 86400;
+  const lowRunway = flowing && runwaySeconds < 86400;
+
+  // Employee card shows what they can cash out (unclaimed); employer card shows
+  // the cumulative total streamed. Both tick up at the same rate.
+  const tickerSeed = perspective === "employee" ? unclaimed : streamedSoFar;
 
   return (
     <motion.div
@@ -110,7 +108,7 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
         </p>
         <div className="mt-1.5">
           <StreamTicker
-            initialAccrued={accruedRaw ?? 0n}
+            initialAccrued={tickerSeed}
             ratePerSecond={ratePerSecond}
             active={flowing}
             tone={active ? "ink" : "paper"}
@@ -140,7 +138,7 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
           {notStarted
             ? formatRunway(Math.max(0, secondsUntilStart))
             : flowing
-            ? formatRunway(runwaySec)
+            ? formatRunway(runwaySeconds)
             : "done"}
         </span>
       </div>

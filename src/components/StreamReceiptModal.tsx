@@ -4,7 +4,8 @@ import { Radio, ArrowRight, Copy, Check, Download, Share2, Loader2, Clock } from
 import { useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { Modal } from "./Modal";
-import { StreamMeta, useAccrued } from "@/hooks/usePayroll";
+import { StreamMeta } from "@/hooks/usePayroll";
+import { streamMath } from "@/lib/stream-math";
 import {
   formatUsdc,
   rateToDaily,
@@ -148,7 +149,6 @@ function AntiTamperBackdrop({ id }: { id: string }) {
  * theme tokens) so it stays legible in dark mode AND exports to a clean PNG.
  */
 export function StreamReceiptModal({ stream, perspective, counterpartyName, onClose }: Props) {
-  const { data: accruedRaw } = useAccrued(stream.id);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<null | "download" | "share">(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -156,8 +156,9 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
   const counterparty = perspective === "employer" ? stream.employee : stream.employer;
   const generatedAt = formatTimestamp(BigInt(Math.floor(Date.now() / 1000)));
   const patternId = stream.id.toString();
-  // Scheduled: active on-chain but its start is still in the future.
-  const notStarted = stream.active && Number(stream.startTime) > Math.floor(Date.now() / 1000);
+  // Cumulative total ever streamed — derived from the on-chain claim clock so it
+  // never resets to 0 after a cash-out (unlike accrued-since-last-claim).
+  const { streamedSoFar, notStarted } = streamMath(stream);
 
   async function copyId() {
     try {
@@ -323,7 +324,7 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
               {notStarted ? "Scheduled to stream" : "Streamed so far"}
             </p>
             <p className="mt-0.5 font-mono text-2xl font-semibold tracking-tight text-panel">
-              ${formatUsdc(accruedRaw ?? 0n)}
+              ${formatUsdc(streamedSoFar)}
             </p>
           </div>
 

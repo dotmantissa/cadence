@@ -10,7 +10,20 @@ import { UsernameGate } from "@/components/UsernameGate";
 import { ProfileProvider } from "@/components/ProfileProvider";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
-const queryClient = new QueryClient();
+// Cache-first defaults so revisiting a page paints instantly from the last
+// known values and refetches in the background, instead of blanking out and
+// waiting on the RPC. Our contract hooks set their own refetchInterval for
+// liveness; staleTime only governs the remount flash.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 10_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: 2,
+    },
+  },
+});
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 

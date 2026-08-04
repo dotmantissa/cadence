@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Plus, Wallet, Waves } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
-import { StreamCard } from "@/components/StreamCard";
+import { StreamCollection } from "@/components/StreamCollection";
 import { CreateStreamModal } from "@/components/CreateStreamModal";
 import { TopUpModal } from "@/components/TopUpModal";
 import { FlowField } from "@/components/motion/FlowField";
@@ -15,7 +15,7 @@ import { formatUsdc } from "@/lib/utils";
 
 export default function EmployerPage() {
   const { address, connected } = useActiveAddress();
-  const { data: streams, refetch } = useEmployerStreams(address);
+  const { data: streams, isLoading: loadingStreams, refetch } = useEmployerStreams(address);
   const { data: balance } = useUsdcBalance(address);
   const { cancel } = useCancelStream();
 
@@ -67,7 +67,11 @@ export default function EmployerPage() {
                 <Wallet size={13} /> USDC balance
               </div>
               <p className="mt-2 font-mono text-4xl font-semibold tracking-tight">
-                ${balance !== undefined ? formatUsdc(balance) : "0.00"}
+                {balance === undefined ? (
+                  <span className="skeleton inline-block h-9 w-40 rounded-md align-middle" />
+                ) : (
+                  `$${formatUsdc(balance)}`
+                )}
               </p>
             </div>
             <div className="text-right">
@@ -75,36 +79,35 @@ export default function EmployerPage() {
                 <Waves size={13} /> active streams
               </div>
               <p className="mt-2 font-mono text-4xl font-semibold tracking-tight text-volt-bright">
-                {streams ? activeCount : "0"}
+                {loadingStreams ? (
+                  <span className="skeleton inline-block h-9 w-12 rounded-md align-middle" />
+                ) : (
+                  activeCount
+                )}
               </p>
             </div>
           </div>
         </div>
 
         {/* Streams */}
-        {!streams || streams.length === 0 ? (
-          <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
-            <p className="text-ink/60">No streams yet. The team is waiting.</p>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="mt-3 text-sm font-medium text-volt transition-colors hover:text-volt-bright"
-            >
-              Open your first stream
-            </button>
-          </div>
-        ) : (
-          <div className="mt-8 grid gap-5 sm:grid-cols-2">
-            {[...streams].reverse().map((id) => (
-              <StreamCard
-                key={id.toString()}
-                streamId={id}
-                perspective="employer"
-                onCancel={() => cancel(id)}
-                onTopUp={() => setTopUpStreamId(id)}
-              />
-            ))}
-          </div>
-        )}
+        <StreamCollection
+          ids={streams}
+          perspective="employer"
+          loadingIds={loadingStreams}
+          onCancel={(id) => cancel(id)}
+          onTopUp={(id) => setTopUpStreamId(id)}
+          emptyState={
+            <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
+              <p className="text-ink/60">No streams yet. The team is waiting.</p>
+              <button
+                onClick={() => setShowCreate(true)}
+                className="mt-3 text-sm font-medium text-volt transition-colors hover:text-volt-bright"
+              >
+                Open your first stream
+              </button>
+            </div>
+          }
+        />
       </main>
 
       {showCreate && (

@@ -138,7 +138,12 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   }
 
   return (
-    <Modal title="Open a stream" onClose={onClose} closeDisabled={isPending}>
+    <Modal
+      title="Open a stream"
+      onClose={onClose}
+      closeDisabled={isPending}
+      dismissable={false}
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className={labelCls}>Who is getting paid</label>
@@ -237,6 +242,24 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                 required
               />
             </div>
+            {/* Balance, highlighted right under the amount it's checked against. */}
+            <p className="mt-1.5 text-xs">
+              {balance === undefined ? (
+                <span className="inline-flex items-center gap-1.5 text-ink/40">
+                  <Loader2 size={11} className="animate-spin" /> checking balance…
+                </span>
+              ) : (
+                <span
+                  className={cn(
+                    "font-medium",
+                    insufficientBalance ? "text-red-500" : "text-volt"
+                  )}
+                >
+                  Balance: <span className="font-mono">${formatUsdc(balance)}</span>
+                  {insufficientBalance && " — not enough"}
+                </span>
+              )}
+            </p>
           </div>
           <div>
             <label className={labelCls}>Over how many days</label>
@@ -261,29 +284,18 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
               <span className="text-ink/45">Per second</span>
               <span className="font-mono text-ink/60">${formatUsdc(ratePerSecond, 8)} / sec</span>
             </div>
-            {balance !== undefined && (
-              <div
-                className={cn(
-                  "flex justify-between border-t border-ink/10 pt-2 text-xs font-medium",
-                  insufficientBalance ? "text-red-500" : "text-volt"
-                )}
-              >
-                <span>Your balance</span>
-                <span className="font-mono">${formatUsdc(balance)}</span>
-              </div>
-            )}
           </div>
         )}
 
         <div>
           <label className={labelCls}>
-            Invoice tag <span className="normal-case text-ink/30">(optional)</span>
+            Remark <span className="normal-case text-ink/30">(optional)</span>
           </label>
           <input
             type="text"
             value={invoiceRef}
             onChange={(e) => setInvoiceRef(e.target.value)}
-            placeholder="INV-2026-001"
+            placeholder="e.g. June retainer, INV-2026-001"
             className={field}
           />
         </div>

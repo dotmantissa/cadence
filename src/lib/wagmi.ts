@@ -11,7 +11,15 @@ import { arcTestnet } from "./chains";
 export const wagmiConfig = createConfig({
   chains: [arcTestnet],
   transports: {
-    [arcTestnet.id]: http(arcTestnet.rpcUrls.default.http[0]),
+    // batch: collapse reads fired in the same tick into one JSON-RPC batch, and
+    // let viem route view calls through Multicall3 — a page of stream cards then
+    // costs ~1-2 round trips instead of one per read.
+    [arcTestnet.id]: http(arcTestnet.rpcUrls.default.http[0], {
+      batch: true,
+    }),
+  },
+  batch: {
+    multicall: true,
   },
   ssr: true,
 });

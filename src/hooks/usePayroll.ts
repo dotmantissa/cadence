@@ -1,7 +1,67 @@
 "use client";
 
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { PAYROLL_ADDRESS, PAYROLL_ABI, USDC_ADDRESS, ERC20_ABI } from "@/lib/contracts";
+
+/** Decoded shape of a `streams(id)` tuple, keyed for readability. */
+export interface StreamMeta {
+  id: bigint;
+  employer: `0x${string}`;
+  employee: `0x${string}`;
+  ratePerSecond: bigint;
+  startTime: bigint;
+  lastClaimTime: bigint;
+  deposit: bigint;
+  active: boolean;
+  invoiceRef: string;
+}
+
+/**
+ * Fetch the full struct for many streams in one batched multicall, so a page
+ * can filter/search across them without each card fetching independently.
+ * Returns decoded metadata plus loading state.
+ */
+export function useStreamsMeta(ids: readonly bigint[] | undefined) {
+  const query = useReadContracts({
+    contracts: (ids ?? []).map((id) => ({
+      address: PAYROLL_ADDRESS,
+      abi: PAYROLL_ABI,
+      functionName: "streams" as const,
+      args: [id] as const,
+    })),
+    query: { enabled: !!ids && ids.length > 0, refetchInterval: 5000 },
+  });
+
+  const streams: StreamMeta[] = (query.data ?? [])
+    .map((res, i) => {
+      if (res.status !== "success" || !res.result) return null;
+      const [employer, employee, ratePerSecond, startTime, lastClaimTime, deposit, active, invoiceRef] =
+        res.result as unknown as [
+          `0x${string}`,
+          `0x${string}`,
+          bigint,
+          bigint,
+          bigint,
+          bigint,
+          boolean,
+          string
+        ];
+      return {
+        id: ids![i],
+        employer,
+        employee,
+        ratePerSecond,
+        startTime,
+        lastClaimTime,
+        deposit,
+        active,
+        invoiceRef,
+      } satisfies StreamMeta;
+    })
+    .filter((s): s is StreamMeta => s !== null);
+
+  return { streams, isLoading: query.isLoading, refetch: query.refetch };
+}
 
 export function useStream(streamId: bigint | undefined) {
   return useReadContract({

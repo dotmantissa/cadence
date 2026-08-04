@@ -13,9 +13,10 @@ interface Props {
   onWithdraw?: () => void;
   onCancel?: () => void;
   onTopUp?: () => void;
+  onOpenReceipt?: () => void;
 }
 
-export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopUp }: Props) {
+export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopUp, onOpenReceipt }: Props) {
   const { data: stream } = useStream(streamId);
   const { data: accruedRaw } = useAccrued(streamId);
   const { data: runwayRaw } = useRunway(streamId);
@@ -34,8 +35,11 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.3 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      onClick={onOpenReceipt}
+      role={onOpenReceipt ? "button" : undefined}
       className={cn(
         "group relative overflow-hidden rounded-none border p-6 transition-all duration-500 ease-liquid",
+        onOpenReceipt && "cursor-pointer",
         active
           ? "border-ink/10 bg-panel text-panel-foreground shadow-[0_24px_70px_-30px_rgba(23,22,24,0.55)]"
           : "border-ink/10 bg-paper-warm text-ink opacity-80"
@@ -126,7 +130,10 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
-            onClick={onWithdraw}
+            onClick={(e) => {
+              e.stopPropagation();
+              onWithdraw?.();
+            }}
             className="flex flex-1 items-center justify-center gap-2 rounded-full bg-volt py-3 text-sm font-medium text-white transition-colors hover:bg-volt-bright"
           >
             Cash out <ArrowUpRight size={16} />
@@ -137,7 +144,10 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.97 }}
-              onClick={onTopUp}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTopUp?.();
+              }}
               className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 py-3 text-sm font-medium text-panel-foreground transition-colors hover:bg-white/15"
             >
               <Plus size={15} /> Top up
@@ -146,7 +156,10 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.97 }}
-                onClick={onCancel}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCancel?.();
+                }}
                 className="flex items-center justify-center gap-1.5 rounded-full border border-red-400/30 px-4 py-3 text-sm font-medium text-red-400 transition-colors hover:border-red-400/60 hover:bg-red-400/10"
               >
                 <X size={15} /> Cancel

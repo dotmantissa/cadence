@@ -8,24 +8,37 @@ interface Props {
   title: string;
   onClose: () => void;
   closeDisabled?: boolean;
+  /**
+   * When false, clicking the backdrop and pressing Escape do NOT close the
+   * modal — only the X button (or the caller) can. Use for flows where an
+   * accidental dismiss would lose in-progress work. Defaults to true.
+   */
+  dismissable?: boolean;
   children: React.ReactNode;
   className?: string;
 }
 
 /** Shared modal shell: dark scrim, spring-in panel, escape + scroll lock. */
-export function Modal({ title, onClose, closeDisabled, children, className = "" }: Props) {
+export function Modal({
+  title,
+  onClose,
+  closeDisabled,
+  dismissable = true,
+  children,
+  className = "",
+}: Props) {
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !closeDisabled) onClose();
+      if (e.key === "Escape" && dismissable && !closeDisabled) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
     };
-  }, [onClose, closeDisabled]);
+  }, [onClose, closeDisabled, dismissable]);
 
   return (
     <AnimatePresence>
@@ -35,7 +48,7 @@ export function Modal({ title, onClose, closeDisabled, children, className = "" 
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        onClick={() => !closeDisabled && onClose()}
+        onClick={() => dismissable && !closeDisabled && onClose()}
         className="fixed inset-0 z-50 flex items-center justify-center bg-panel/50 p-4 backdrop-blur-sm"
       >
         <motion.div

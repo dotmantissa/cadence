@@ -50,3 +50,20 @@ export function dailyRateToPerSecond(dailyUsdc: string): bigint {
 export function shortenAddress(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
+
+/**
+ * Format an on-chain unix seconds value (bigint) as a readable local timestamp.
+ * Returns a dash for the zero/never sentinel so receipts don't show "1970".
+ */
+export function formatTimestamp(unixSeconds: bigint | number | undefined): string {
+  if (unixSeconds === undefined) return "—";
+  const secs = typeof unixSeconds === "bigint" ? Number(unixSeconds) : unixSeconds;
+  if (!secs) return "—";
+  return new Date(secs * 1000).toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

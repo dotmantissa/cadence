@@ -3,7 +3,7 @@
 import { Wallet } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
-import { StreamCard } from "@/components/StreamCard";
+import { StreamCollection } from "@/components/StreamCollection";
 import { FlowField } from "@/components/motion/FlowField";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { useEmployeeStreams, useUsdcBalance, useWithdraw } from "@/hooks/usePayroll";
@@ -11,7 +11,7 @@ import { formatUsdc } from "@/lib/utils";
 
 export default function EmployeePage() {
   const { address, connected } = useActiveAddress();
-  const { data: streams, refetch } = useEmployeeStreams(address);
+  const { data: streams, isLoading: loadingStreams, refetch } = useEmployeeStreams(address);
   const { data: balance } = useUsdcBalance(address);
   const { withdraw } = useWithdraw();
 
@@ -46,35 +46,34 @@ export default function EmployeePage() {
               <Wallet size={13} /> in your wallet
             </div>
             <p className="mt-2 font-mono text-4xl font-semibold tracking-tight sm:text-5xl">
-              ${balance !== undefined ? formatUsdc(balance) : "0.00"}
+              {balance === undefined ? (
+                <span className="skeleton inline-block h-11 w-52 rounded-md align-middle" />
+              ) : (
+                `$${formatUsdc(balance)}`
+              )}
             </p>
             <p className="mt-2 text-xs text-panel-foreground/40">Whatever you have cashed out lands here.</p>
           </div>
         </div>
 
         {/* Streams */}
-        {!streams || streams.length === 0 ? (
-          <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
-            <p className="text-ink/60">No streams pointed at this wallet yet.</p>
-            <p className="mt-1 text-sm text-ink/40">
-              Ask whoever signs the checks to spin one up for you.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-8 grid gap-5 sm:grid-cols-2">
-            {[...streams].reverse().map((id) => (
-              <StreamCard
-                key={id.toString()}
-                streamId={id}
-                perspective="employee"
-                onWithdraw={() => {
-                  withdraw(id);
-                  refetch();
-                }}
-              />
-            ))}
-          </div>
-        )}
+        <StreamCollection
+          ids={streams}
+          perspective="employee"
+          loadingIds={loadingStreams}
+          onWithdraw={(id) => {
+            withdraw(id);
+            refetch();
+          }}
+          emptyState={
+            <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
+              <p className="text-ink/60">No streams pointed at this wallet yet.</p>
+              <p className="mt-1 text-sm text-ink/40">
+                Ask whoever signs the checks to spin one up for you.
+              </p>
+            </div>
+          }
+        />
       </main>
     </div>
   );

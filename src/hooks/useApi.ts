@@ -68,6 +68,13 @@ export function useApi() {
         username: string | null;
         displayName: string | null;
       }>(`/api/resolve?u=${encodeURIComponent(u)}`),
+    resolveAddresses: (addresses: string[]) =>
+      request<{
+        identities: Record<string, { username: string | null; displayName: string | null }>;
+      }>("/api/resolve-addresses", {
+        method: "POST",
+        body: JSON.stringify({ addresses }),
+      }),
 
     listPayees: () => request<{ payees: Payee[] }>("/api/payees"),
     addPayee: (input: {

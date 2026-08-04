@@ -1,20 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Search, X, SlidersHorizontal } from "lucide-react";
 import { StreamCard } from "./StreamCard";
 import { StreamReceiptModal } from "./StreamReceiptModal";
-import { useStreamsMeta, type StreamMeta } from "@/hooks/usePayroll";
+import { type StreamMeta } from "@/hooks/usePayroll";
+import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 
 type Filter = "ongoing" | "ended" | "all";
+type Identity = { username: string | null; displayName: string | null };
 
 interface Props {
-  /** Raw stream ids for this wallet, newest-last (as returned on-chain). */
-  ids: readonly bigint[] | undefined;
+  /** Decoded streams for this wallet, already newest-first. */
+  streams: StreamMeta[];
   perspective: "employer" | "employee";
-  /** True while the id list itself is still resolving. */
-  loadingIds?: boolean;
+  /** True while the streams are still loading on a cold cache. */
+  loading?: boolean;
   onWithdraw?: (id: bigint) => void;
   onCancel?: (id: bigint) => void;
   onTopUp?: (id: bigint) => void;
@@ -28,29 +30,69 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
 ];
 
+/** Local end-of-day epoch (ms) for an inclusive "to" date bound. */
+function endOfDay(dateStr: string): number {
+  const d = new Date(dateStr);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+function startOfDay(dateStr: string): number {
+  const d = new Date(dateStr);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 /**
- * The streams grid with filter tabs (ongoing / ended / all) and a Remark search.
- * Metadata for every stream is fetched in one batched multicall so filtering and
- * searching happen client-side without a request per card.
+ * The streams grid: filter tabs (ongoing / ended / all) plus an advanced search
+ * that matches a stream by remark, by the counterparty it is streamed to/from
+ * (wallet address OR @username), and by an opened-on date range. Counterparty
+ * handles are reverse-resolved once per address set so search covers usernames.
  */
 export function StreamCollection({
-  ids,
+  streams,
   perspective,
-  loadingIds = false,
+  loading = false,
   onWithdraw,
   onCancel,
   onTopUp,
   emptyState,
 }: Props) {
-  const [filter, setFilter] = useState<Filter>("ongoing");
+  const { api, authenticated } = useApi();
+  const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [receipt, setReceipt] = useState<StreamMeta | null>(null);
+  const [identities, setIdentities] = useState<Record<string, Identity>>({});
 
-  // Newest first for display.
-  const ordered = useMemo(() => (ids ? [...ids].reverse() : []), [ids]);
-  const { streams, isLoading: loadingMeta } = useStreamsMeta(ordered);
+  const counterpartyOf = (s: StreamMeta) =>
+    (perspective === "employer" ? s.employee : s.employer).toLowerCase();
 
-  const loading = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
+  // Unique counterparties for this list; reverse-resolve their handles for search.
+  const cpKey = useMemo(
+    () => Array.from(new Set(streams.map(counterpartyOf))).sort().join(","),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [streams, perspective]
+  );
+
+  useEffect(() => {
+    if (!authenticated || cpKey === "") return;
+    const addresses = cpKey.split(",");
+    let cancelled = false;
+    api
+      .resolveAddresses(addresses)
+      .then((r) => {
+        if (!cancelled) setIdentities(r.identities ?? {});
+      })
+      .catch(() => {
+        /* search still works on remark + address without handles */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cpKey, authenticated]);
 
   const counts = useMemo(() => {
     let ongoing = 0;
@@ -58,18 +100,46 @@ export function StreamCollection({
     return { ongoing, ended: streams.length - ongoing, all: streams.length };
   }, [streams]);
 
+  const hasDateFilter = fromDate !== "" || toDate !== "";
+  const activeFilterCount = (hasDateFilter ? 1 : 0) + (query.trim() ? 1 : 0);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const from = fromDate ? startOfDay(fromDate) : null;
+    const to = toDate ? endOfDay(toDate) : null;
+
     return streams.filter((s) => {
       if (filter === "ongoing" && !s.active) return false;
       if (filter === "ended" && s.active) return false;
-      if (q && !s.invoiceRef.toLowerCase().includes(q)) return false;
+
+      // Date range on the opened-at time.
+      if (from !== null || to !== null) {
+        const openedMs = Number(s.startTime) * 1000;
+        if (from !== null && openedMs < from) return false;
+        if (to !== null && openedMs > to) return false;
+      }
+
+      // Text: remark, counterparty address, or counterparty handle/name.
+      if (q) {
+        const cp = counterpartyOf(s);
+        const id = identities[cp];
+        const haystack = [
+          s.invoiceRef,
+          cp,
+          id?.username ?? "",
+          id?.displayName ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [streams, filter, query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streams, filter, query, fromDate, toDate, identities, perspective]);
 
   // No streams on this wallet at all — the page's own empty prompt.
-  if (!loading && (!ids || ids.length === 0)) {
+  if (!loading && streams.length === 0) {
     return <>{emptyState}</>;
   }
 
@@ -95,28 +165,89 @@ export function StreamCollection({
           ))}
         </div>
 
-        <div className="relative">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/35">
-            <Search size={14} />
-          </span>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by remark"
-            className="w-56 rounded-full border border-ink/10 bg-paper-warm py-2 pl-9 pr-8 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20"
-          />
-          {query && (
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/35">
+              <Search size={14} />
+            </span>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search remark, address, @handle"
+              className="w-64 rounded-full border border-ink/10 bg-paper-warm py-2 pl-9 pr-8 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink/30 transition-colors hover:text-ink/60"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            className={cn(
+              "relative inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
+              showFilters || hasDateFilter
+                ? "border-volt/40 bg-volt-wash text-volt"
+                : "border-ink/10 bg-paper-warm text-ink/50 hover:text-ink"
+            )}
+            aria-label="Date filters"
+            title="Filter by date"
+          >
+            <SlidersHorizontal size={15} />
+            {activeFilterCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-volt px-1 font-mono text-[10px] font-semibold text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Advanced: date range */}
+      {showFilters && (
+        <div className="mt-3 flex flex-wrap items-end gap-4 rounded-none border border-ink/10 bg-paper-warm px-4 py-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-ink/45">
+              Opened from
+            </label>
+            <input
+              type="date"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="rounded-lg border border-ink/10 bg-paper px-3 py-1.5 text-sm text-ink focus:border-volt focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-ink/45">
+              Opened to
+            </label>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(e) => setToDate(e.target.value)}
+              className="rounded-lg border border-ink/10 bg-paper px-3 py-1.5 text-sm text-ink focus:border-volt focus:outline-none"
+            />
+          </div>
+          {hasDateFilter && (
             <button
-              onClick={() => setQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink/30 transition-colors hover:text-ink/60"
-              aria-label="Clear search"
+              onClick={() => {
+                setFromDate("");
+                setToDate("");
+              }}
+              className="mb-0.5 inline-flex items-center gap-1.5 text-xs font-medium text-ink/50 transition-colors hover:text-ink"
             >
-              <X size={14} />
+              <X size={13} /> Clear dates
             </button>
           )}
         </div>
-      </div>
+      )}
 
       {/* Grid */}
       {loading ? (
@@ -128,8 +259,8 @@ export function StreamCollection({
       ) : visible.length === 0 ? (
         <div className="mt-6 rounded-none border border-dashed border-ink/15 bg-paper-warm p-12 text-center">
           <p className="text-ink/55">
-            {query
-              ? `No streams match “${query.trim()}”.`
+            {query || hasDateFilter
+              ? "No streams match those filters."
               : filter === "ended"
               ? "No ended streams yet."
               : "No ongoing streams right now."}
@@ -155,6 +286,11 @@ export function StreamCollection({
         <StreamReceiptModal
           stream={receipt}
           perspective={perspective}
+          counterpartyName={
+            identities[counterpartyOf(receipt)]?.username ??
+            identities[counterpartyOf(receipt)]?.displayName ??
+            null
+          }
           onClose={() => setReceipt(null)}
         />
       )}

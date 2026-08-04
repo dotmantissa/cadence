@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Wallet, Waves } from "lucide-react";
+import { Plus, Wallet, Waves, Eye, EyeOff } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
 import { StreamCollection } from "@/components/StreamCollection";
@@ -10,17 +10,27 @@ import { CreateStreamModal } from "@/components/CreateStreamModal";
 import { TopUpModal } from "@/components/TopUpModal";
 import { FlowField } from "@/components/motion/FlowField";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
-import { useEmployerStreams, useUsdcBalance, useCancelStream } from "@/hooks/usePayroll";
+import { useEmployerStreams, useUsdcBalance, useCancelStream, useStreamsMeta } from "@/hooks/usePayroll";
+import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
 import { formatUsdc } from "@/lib/utils";
 
 export default function EmployerPage() {
   const { address, connected } = useActiveAddress();
-  const { data: streams, isLoading: loadingStreams, refetch } = useEmployerStreams(address);
+  const { data: ids, isLoading: loadingIds, refetch } = useEmployerStreams(address);
   const { data: balance } = useUsdcBalance(address);
   const { cancel } = useCancelStream();
+  const [hideBalance, toggleBalance] = useBalancePrivacy();
 
   const [showCreate, setShowCreate] = useState(false);
   const [topUpStreamId, setTopUpStreamId] = useState<bigint | null>(null);
+
+  // Newest-first, decoded once for both the counts and the collection.
+  const ordered = useMemo(() => (ids ? [...ids].reverse() : []), [ids]);
+  const { streams, isLoading: loadingMeta } = useStreamsMeta(ordered);
+  const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
+
+  const totalCount = ordered.length;
+  const activeCount = useMemo(() => streams.filter((s) => s.active).length, [streams]);
 
   if (!connected) {
     return (
@@ -33,8 +43,6 @@ export default function EmployerPage() {
       </div>
     );
   }
-
-  const activeCount = streams?.length ?? 0;
 
   return (
     <div className="min-h-screen bg-paper">
@@ -61,6 +69,14 @@ export default function EmployerPage() {
         {/* Balance strip */}
         <div className="relative mt-8 overflow-hidden rounded-none border border-ink/10 bg-panel p-7 text-panel-foreground">
           <FlowField tone="ink" density={0.9} />
+          <button
+            onClick={toggleBalance}
+            className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full text-panel-foreground/40 transition-colors hover:bg-white/10 hover:text-panel-foreground"
+            aria-label={hideBalance ? "Show balance" : "Hide balance"}
+            title={hideBalance ? "Show balance" : "Hide balance"}
+          >
+            {hideBalance ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div>
               <div className="flex items-center gap-2 text-xs text-panel-foreground/50">
@@ -69,6 +85,8 @@ export default function EmployerPage() {
               <p className="mt-2 font-mono text-4xl font-semibold tracking-tight">
                 {balance === undefined ? (
                   <span className="skeleton inline-block h-9 w-40 rounded-md align-middle" />
+                ) : hideBalance ? (
+                  "••••••"
                 ) : (
                   `$${formatUsdc(balance)}`
                 )}
@@ -76,14 +94,17 @@ export default function EmployerPage() {
             </div>
             <div className="text-right">
               <div className="flex items-center justify-end gap-2 text-xs text-panel-foreground/50">
-                <Waves size={13} /> active streams
+                <Waves size={13} /> total streams
               </div>
               <p className="mt-2 font-mono text-4xl font-semibold tracking-tight text-volt-bright">
                 {loadingStreams ? (
                   <span className="skeleton inline-block h-9 w-12 rounded-md align-middle" />
                 ) : (
-                  activeCount
+                  totalCount
                 )}
+              </p>
+              <p className="mt-1 text-xs text-panel-foreground/40">
+                {loadingStreams ? "" : `${activeCount} ongoing`}
               </p>
             </div>
           </div>
@@ -91,9 +112,9 @@ export default function EmployerPage() {
 
         {/* Streams */}
         <StreamCollection
-          ids={streams}
+          streams={streams}
           perspective="employer"
-          loadingIds={loadingStreams}
+          loading={loadingStreams}
           onCancel={(id) => cancel(id)}
           onTopUp={(id) => setTopUpStreamId(id)}
           emptyState={

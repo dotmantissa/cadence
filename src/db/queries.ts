@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./index";
 import { users, payees, streamDrafts } from "./schema";
 import type { Caller } from "@/lib/privy-server";
@@ -68,6 +68,38 @@ export async function getUserByUsername(username: string) {
     .where(eq(users.username, value))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Reverse-resolve a batch of wallet addresses to the public handle behind each,
+ * so a payer/payee can see "who" a stream's counterparty is instead of a raw
+ * 0x… . Case-insensitive (addresses may be stored checksummed). Returns a map
+ * from lowercased address → { username, displayName }; only addresses that map
+ * to a known user appear. Never returns email or any other private field.
+ */
+export async function getPublicIdentitiesByAddresses(
+  addresses: string[]
+): Promise<Record<string, { username: string | null; displayName: string | null }>> {
+  const cleaned = Array.from(
+    new Set(addresses.map((a) => a.trim().toLowerCase()).filter((a) => /^0x[0-9a-f]{40}$/.test(a)))
+  );
+  if (cleaned.length === 0) return {};
+
+  const rows = await db
+    .select({
+      walletAddress: users.walletAddress,
+      username: users.username,
+      displayName: users.displayName,
+    })
+    .from(users)
+    .where(inArray(sql`lower(${users.walletAddress})`, cleaned));
+
+  const map: Record<string, { username: string | null; displayName: string | null }> = {};
+  for (const r of rows) {
+    if (!r.walletAddress) continue;
+    map[r.walletAddress.toLowerCase()] = { username: r.username, displayName: r.displayName };
+  }
+  return map;
 }
 
 /**

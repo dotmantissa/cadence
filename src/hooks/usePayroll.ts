@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo, useRef } from "react";
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { keepPreviousData } from "@tanstack/react-query";
 import { PAYROLL_ADDRESS, PAYROLL_ABI, USDC_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 
 /** Decoded shape of a `streams(id)` tuple, keyed for readability. */
@@ -19,46 +21,80 @@ export interface StreamMeta {
 /**
  * Fetch the full struct for many streams in one batched multicall, so a page
  * can filter/search across them without each card fetching independently.
- * Returns decoded metadata plus loading state.
+ *
+ * Resilience: the contracts array is memoized on a stable id key so the query
+ * key doesn't churn every render; previous data is kept across refetches; and a
+ * per-id cache retains the last good decode, so a transient RPC failure on one
+ * sub-call of a poll never blanks that card (which caused cards to flicker in
+ * and out every refetch tick).
  */
 export function useStreamsMeta(ids: readonly bigint[] | undefined) {
+  const idKey = (ids ?? []).map((i) => i.toString()).join(",");
+
+  const contracts = useMemo(
+    () =>
+      (ids ?? []).map((id) => ({
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "streams" as const,
+        args: [id] as const,
+      })),
+    // idKey captures the actual ids; ids identity churns on every poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idKey]
+  );
+
   const query = useReadContracts({
-    contracts: (ids ?? []).map((id) => ({
-      address: PAYROLL_ADDRESS,
-      abi: PAYROLL_ABI,
-      functionName: "streams" as const,
-      args: [id] as const,
-    })),
-    query: { enabled: !!ids && ids.length > 0, refetchInterval: 5000 },
+    contracts,
+    query: {
+      enabled: !!ids && ids.length > 0,
+      refetchInterval: 5000,
+      placeholderData: keepPreviousData,
+    },
   });
 
-  const streams: StreamMeta[] = (query.data ?? [])
-    .map((res, i) => {
-      if (res.status !== "success" || !res.result) return null;
-      const [employer, employee, ratePerSecond, startTime, lastClaimTime, deposit, active, invoiceRef] =
-        res.result as unknown as [
-          `0x${string}`,
-          `0x${string}`,
-          bigint,
-          bigint,
-          bigint,
-          bigint,
-          boolean,
-          string
-        ];
-      return {
-        id: ids![i],
-        employer,
-        employee,
-        ratePerSecond,
-        startTime,
-        lastClaimTime,
-        deposit,
-        active,
-        invoiceRef,
-      } satisfies StreamMeta;
-    })
-    .filter((s): s is StreamMeta => s !== null);
+  // Last good decode per stream id, so a card never vanishes on a flaky poll.
+  const cache = useRef(new Map<string, StreamMeta>());
+
+  const streams = useMemo<StreamMeta[]>(() => {
+    const list = ids ?? [];
+    const data = query.data ?? [];
+    return list
+      .map((id, i) => {
+        const key = id.toString();
+        const res = data[i];
+        if (res && res.status === "success" && res.result) {
+          const [employer, employee, ratePerSecond, startTime, lastClaimTime, deposit, active, invoiceRef] =
+            res.result as unknown as [
+              `0x${string}`,
+              `0x${string}`,
+              bigint,
+              bigint,
+              bigint,
+              bigint,
+              boolean,
+              string
+            ];
+          const meta: StreamMeta = {
+            id,
+            employer,
+            employee,
+            ratePerSecond,
+            startTime,
+            lastClaimTime,
+            deposit,
+            active,
+            invoiceRef,
+          };
+          cache.current.set(key, meta);
+          return meta;
+        }
+        // Fresh read missing/failed this tick — fall back to last good decode.
+        return cache.current.get(key) ?? null;
+      })
+      .filter((s): s is StreamMeta => s !== null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.data, idKey]);
 
   return { streams, isLoading: query.isLoading, refetch: query.refetch };
 }

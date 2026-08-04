@@ -275,14 +275,14 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         </div>
 
         {depositAmount > 0n && (
-          <div className="space-y-2 rounded-2xl border border-ink/10 bg-volt-wash px-4 py-3">
+          <div className="space-y-2 rounded-2xl border border-volt/15 bg-volt-wash px-4 py-3">
             <div className="flex justify-between text-sm">
-              <span className="text-ink/55">Streams at</span>
-              <span className="font-mono font-medium text-ink">${formatUsdc(dailyRateRaw)} / day</span>
+              <span className="text-panel/55">Streams at</span>
+              <span className="font-mono font-medium text-panel">${formatUsdc(dailyRateRaw)} / day</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-ink/45">Per second</span>
-              <span className="font-mono text-ink/60">${formatUsdc(ratePerSecond, 8)} / sec</span>
+              <span className="text-panel/45">Per second</span>
+              <span className="font-mono text-panel/60">${formatUsdc(ratePerSecond, 8)} / sec</span>
             </div>
           </div>
         )}

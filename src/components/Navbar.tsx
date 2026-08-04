@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { usePrivy } from "@privy-io/react-auth";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X } from "lucide-react";
+import { Menu, X, CircleUser } from "lucide-react";
 import { Logo } from "./Logo";
 import { ConnectWallet } from "./ConnectWallet";
+import { ThemeToggle } from "./ThemeToggle";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -16,6 +18,7 @@ const links = [
 
 export function Navbar() {
   const pathname = usePathname();
+  const { authenticated } = usePrivy();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -46,7 +49,7 @@ export function Navbar() {
         className={cn(
           "fixed inset-x-0 top-0 z-50 transition-all duration-500 ease-liquid",
           scrolled
-            ? "glass border-b border-black/5"
+            ? "glass border-b border-ink/5"
             : "bg-transparent"
         )}
       >
@@ -68,7 +71,7 @@ export function Navbar() {
                 {pathname === l.href && (
                   <motion.span
                     layoutId="nav-pill"
-                    className="absolute inset-0 -z-10 rounded-full bg-black/5"
+                    className="absolute inset-0 -z-10 rounded-full bg-ink/5"
                     transition={{ type: "spring", stiffness: 380, damping: 30 }}
                   />
                 )}
@@ -78,12 +81,27 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center gap-3">
+            <ThemeToggle />
+            {authenticated && (
+              <Link
+                href="/profile"
+                aria-label="Your profile"
+                className={cn(
+                  "hidden h-10 w-10 items-center justify-center rounded-full border border-ink/10 transition-colors md:flex",
+                  pathname === "/profile"
+                    ? "bg-ink/5 text-ink"
+                    : "text-ink/60 hover:text-ink"
+                )}
+              >
+                <CircleUser size={18} />
+              </Link>
+            )}
             <div className="hidden md:block">
               <ConnectWallet />
             </div>
             <button
               onClick={() => setOpen((v) => !v)}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 text-ink md:hidden"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-ink/10 text-ink md:hidden"
               aria-label={open ? "Close menu" : "Open menu"}
             >
               {open ? <X size={18} /> : <Menu size={18} />}
@@ -110,12 +128,26 @@ export function Navbar() {
                 >
                   <Link
                     href={l.href}
-                    className="block border-b border-black/5 py-5 text-3xl font-semibold tracking-tightest text-ink"
+                    className="block border-b border-ink/5 py-5 text-3xl font-semibold tracking-tightest text-ink"
                   >
                     {l.label}
                   </Link>
                 </motion.div>
               ))}
+              {authenticated && (
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.08 + links.length * 0.07 }}
+                >
+                  <Link
+                    href="/profile"
+                    className="flex items-center gap-3 border-b border-ink/5 py-5 text-3xl font-semibold tracking-tightest text-ink"
+                  >
+                    <CircleUser size={26} /> Profile
+                  </Link>
+                </motion.div>
+              )}
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}

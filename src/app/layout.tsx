@@ -37,11 +37,19 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#171618",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#141316" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
 };
+
+// Runs before first paint to set the `.dark` class from the saved choice, or
+// the system preference when the user hasn't picked one. Inlined so there is no
+// flash of the wrong theme on load. Kept in sync with ThemeProvider's seeding.
+const themeScript = `(function(){try{var s=localStorage.getItem("theme");var d=s?s==="dark":matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
 
 export default function RootLayout({
   children,
@@ -51,8 +59,12 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geist.variable} ${geistMono.variable} ${display.variable}`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="min-h-screen bg-paper text-ink antialiased">
         <Providers>{children}</Providers>
       </body>

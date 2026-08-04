@@ -58,5 +58,5 @@ export function useProfile() {
     [api]
   );
 
-  return { user, loading, setRole };
+  return { user, loading, setRole, setUser };
 }

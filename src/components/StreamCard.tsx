@@ -37,8 +37,8 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
       className={cn(
         "group relative overflow-hidden rounded-4xl border p-6 transition-all duration-500 ease-liquid",
         active
-          ? "border-black/10 bg-ink text-paper shadow-[0_24px_70px_-30px_rgba(23,22,24,0.55)]"
-          : "border-black/10 bg-paper-warm text-ink opacity-80"
+          ? "border-ink/10 bg-panel text-panel-foreground shadow-[0_24px_70px_-30px_rgba(23,22,24,0.55)]"
+          : "border-ink/10 bg-paper-warm text-ink opacity-80"
       )}
     >
       {active && (
@@ -49,45 +49,45 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
         <div>
           <div className="flex items-center gap-2">
             {active ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-paper/80">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-panel-foreground/80">
                 <Radio size={11} className="text-volt-bright" />
                 live
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-black/[0.03] px-2.5 py-1 text-xs font-medium text-ink/50">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-ink/10 bg-ink/[0.03] px-2.5 py-1 text-xs font-medium text-ink/50">
                 <span className="h-1.5 w-1.5 rounded-full bg-ink/30" />
                 ended
               </span>
             )}
-            <span className={cn("font-mono text-xs", active ? "text-paper/40" : "text-ink/40")}>
+            <span className={cn("font-mono text-xs", active ? "text-panel-foreground/40" : "text-ink/40")}>
               #{streamId.toString()}
             </span>
             {invoiceRef && (
               <span
                 className={cn(
                   "rounded-md px-2 py-0.5 font-mono text-xs",
-                  active ? "bg-white/10 text-paper/60" : "bg-black/5 text-ink/50"
+                  active ? "bg-white/10 text-panel-foreground/60" : "bg-ink/5 text-ink/50"
                 )}
               >
                 {invoiceRef}
               </span>
             )}
           </div>
-          <p className={cn("mt-2 text-xs", active ? "text-paper/40" : "text-ink/40")}>
+          <p className={cn("mt-2 text-xs", active ? "text-panel-foreground/40" : "text-ink/40")}>
             {perspective === "employer" ? "paying" : "from"}{" "}
             <span className="font-mono">
               {shortenAddress(perspective === "employer" ? employee : employer)}
             </span>
           </p>
         </div>
-        <div className={cn("text-right text-xs", active ? "text-paper/50" : "text-ink/45")}>
+        <div className={cn("text-right text-xs", active ? "text-panel-foreground/50" : "text-ink/45")}>
           <div className="font-mono">${rateToDaily(ratePerSecond)}<span className="opacity-50">/day</span></div>
           <div className="font-mono">${rateToMonthly(ratePerSecond)}<span className="opacity-50">/mo</span></div>
         </div>
       </div>
 
       <div className="relative mt-6">
-        <p className={cn("text-xs uppercase tracking-widest", active ? "text-paper/40" : "text-ink/40")}>
+        <p className={cn("text-xs uppercase tracking-widest", active ? "text-panel-foreground/40" : "text-ink/40")}>
           {perspective === "employee" ? "ready to withdraw" : "streamed so far"}
         </p>
         <div className="mt-1.5">
@@ -103,10 +103,10 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
       <div
         className={cn(
           "relative mt-5 flex items-center justify-between border-t pt-4 text-sm",
-          active ? "border-white/10" : "border-black/10"
+          active ? "border-white/10" : "border-ink/10"
         )}
       >
-        <span className={active ? "text-paper/50" : "text-ink/45"}>runway</span>
+        <span className={active ? "text-panel-foreground/50" : "text-ink/45"}>runway</span>
         <span
           className={cn(
             "font-mono",
@@ -138,7 +138,7 @@ export function StreamCard({ streamId, perspective, onWithdraw, onCancel, onTopU
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.97 }}
               onClick={onTopUp}
-              className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 py-3 text-sm font-medium text-paper transition-colors hover:bg-white/15"
+              className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 py-3 text-sm font-medium text-panel-foreground transition-colors hover:bg-white/15"
             >
               <Plus size={15} /> Top up
             </motion.button>

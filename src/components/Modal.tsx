@@ -36,7 +36,7 @@ export function Modal({ title, onClose, closeDisabled, children, className = "" 
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
         onClick={() => !closeDisabled && onClose()}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-panel/50 p-4 backdrop-blur-sm"
       >
         <motion.div
           key="panel"
@@ -45,7 +45,7 @@ export function Modal({ title, onClose, closeDisabled, children, className = "" 
           exit={{ opacity: 0, y: 12, scale: 0.98 }}
           transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
           onClick={(e) => e.stopPropagation()}
-          className={`w-full max-w-md overflow-hidden rounded-4xl border border-black/10 bg-paper p-6 shadow-[0_40px_100px_-40px_rgba(23,22,24,0.5)] ${className}`}
+          className={`w-full max-w-md overflow-hidden rounded-4xl border border-ink/10 bg-paper p-6 shadow-[0_40px_100px_-40px_rgba(23,22,24,0.5)] ${className}`}
         >
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold tracking-tightest text-ink">{title}</h2>
@@ -53,7 +53,7 @@ export function Modal({ title, onClose, closeDisabled, children, className = "" 
               onClick={onClose}
               disabled={closeDisabled}
               aria-label="Close"
-              className="flex h-8 w-8 items-center justify-center rounded-full text-ink/40 transition-colors hover:bg-black/5 hover:text-ink disabled:opacity-30"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-ink/40 transition-colors hover:bg-ink/5 hover:text-ink disabled:opacity-30"
             >
               <X size={17} />
             </button>

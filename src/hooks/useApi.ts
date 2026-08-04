@@ -53,6 +53,16 @@ export function useApi() {
         body: JSON.stringify(patch),
       }),
 
+    checkUsername: (u: string) =>
+      request<{ available: boolean; reason?: string }>(
+        `/api/username?u=${encodeURIComponent(u)}`
+      ),
+    setUsername: (username: string) =>
+      request<{ user: User }>("/api/username", {
+        method: "POST",
+        body: JSON.stringify({ username }),
+      }),
+
     listPayees: () => request<{ payees: Payee[] }>("/api/payees"),
     addPayee: (input: {
       label: string;

@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -9,17 +10,26 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Rebrand palette
+        // Rebrand palette. `ink` and `paper` resolve through CSS variables so a
+        // `.dark` class can swap the whole main surface at once; the RGB-channel
+        // form keeps every `/opacity` modifier working via <alpha-value>.
         ink: {
-          DEFAULT: "#171618",
-          soft: "#232227",
-          softer: "#2e2d33",
-          line: "#33323a",
+          DEFAULT: "rgb(var(--c-ink) / <alpha-value>)",
+          soft: "rgb(var(--c-ink-soft) / <alpha-value>)",
+          softer: "rgb(var(--c-ink-softer) / <alpha-value>)",
+          line: "rgb(var(--c-ink-line) / <alpha-value>)",
         },
         paper: {
-          DEFAULT: "#ffffff",
-          warm: "#f7f6f4",
-          dim: "#edecea",
+          DEFAULT: "rgb(var(--c-paper) / <alpha-value>)",
+          warm: "rgb(var(--c-paper-warm) / <alpha-value>)",
+          dim: "rgb(var(--c-paper-dim) / <alpha-value>)",
+        },
+        // Fixed, theme-independent surface for intentionally-dark panels
+        // (footer, onboarding modals, balance strips). These never flip.
+        panel: {
+          DEFAULT: "#171618",
+          foreground: "#f7f6f4",
+          line: "rgb(255 255 255 / <alpha-value>)",
         },
         volt: {
           DEFAULT: "#2b44e7",
@@ -58,10 +68,6 @@ const config: Config = {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-8px)" },
         },
-        marquee: {
-          "0%": { transform: "translateX(0)" },
-          "100%": { transform: "translateX(-50%)" },
-        },
         "pulse-ring": {
           "0%": { transform: "scale(0.9)", opacity: "0.7" },
           "70%": { transform: "scale(1.6)", opacity: "0" },
@@ -73,7 +79,6 @@ const config: Config = {
         "drift-slow": "drift 28s ease-in-out infinite",
         shimmer: "shimmer 2.4s linear infinite",
         floaty: "floaty 6s ease-in-out infinite",
-        marquee: "marquee 32s linear infinite",
         "pulse-ring": "pulse-ring 2.4s cubic-bezier(0.4,0,0.6,1) infinite",
       },
     },

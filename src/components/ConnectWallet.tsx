@@ -25,7 +25,7 @@ export function ConnectWallet() {
 
   if (!ready) {
     return (
-      <span className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/50 px-4 py-2 text-sm text-ink/40">
+      <span className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper/50 px-4 py-2 text-sm text-ink/40">
         <Loader2 size={14} className="animate-spin" />
         <span className="font-mono">warming up</span>
       </span>
@@ -38,7 +38,7 @@ export function ConnectWallet() {
         onClick={() => logout()}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
-        className="group inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-4 py-2 font-mono text-sm text-ink transition-colors hover:border-black/20"
+        className="group inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper/60 px-4 py-2 font-mono text-sm text-ink transition-colors hover:border-ink/20"
       >
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full animate-pulse-ring rounded-full bg-volt/60" />

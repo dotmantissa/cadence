@@ -6,6 +6,7 @@ import {
   jsonb,
   numeric,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -20,6 +21,9 @@ export const users = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     privyId: text("privy_id").notNull().unique(),
+    // Public @handle. Nullable so existing rows backfill lazily; always stored
+    // lowercase, so a plain unique index enforces case-insensitive uniqueness.
+    username: text("username"),
     // Primary wallet bound to the account (embedded or imported/connected).
     walletAddress: text("wallet_address"),
     email: text("email"),
@@ -34,6 +38,7 @@ export const users = pgTable(
   },
   (t) => ({
     walletIdx: index("users_wallet_idx").on(t.walletAddress),
+    usernameIdx: uniqueIndex("users_username_unique").on(t.username),
   })
 );
 

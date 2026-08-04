@@ -88,8 +88,8 @@ export function FeatureCarousel() {
             onClick={() => embla?.scrollPrev()}
             disabled={!prev}
             className={cn(
-              "flex h-11 w-11 items-center justify-center rounded-full border border-black/10 transition-all",
-              prev ? "text-ink hover:bg-black/5" : "text-ink/25"
+              "flex h-11 w-11 items-center justify-center rounded-full border border-ink/10 transition-all",
+              prev ? "text-ink hover:bg-ink/5" : "text-ink/25"
             )}
             aria-label="Previous"
           >
@@ -99,8 +99,8 @@ export function FeatureCarousel() {
             onClick={() => embla?.scrollNext()}
             disabled={!next}
             className={cn(
-              "flex h-11 w-11 items-center justify-center rounded-full border border-black/10 transition-all",
-              next ? "text-ink hover:bg-black/5" : "text-ink/25"
+              "flex h-11 w-11 items-center justify-center rounded-full border border-ink/10 transition-all",
+              next ? "text-ink hover:bg-ink/5" : "text-ink/25"
             )}
             aria-label="Next"
           >
@@ -124,9 +124,9 @@ export function FeatureCarousel() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true, amount: 0.3 }}
                     transition={{ delay: (i % 3) * 0.08, duration: 0.5 }}
-                    className="group h-full rounded-4xl border border-black/10 bg-paper-warm p-7 transition-colors hover:border-volt/30"
+                    className="group h-full rounded-4xl border border-ink/10 bg-paper-warm p-7 transition-colors hover:border-volt/30"
                   >
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ink text-volt-bright transition-transform duration-500 ease-springy group-hover:-rotate-6 group-hover:scale-110">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-panel text-volt-bright transition-transform duration-500 ease-springy group-hover:-rotate-6 group-hover:scale-110">
                       <Icon size={22} />
                     </div>
                     <h3 className="mt-6 text-xl font-semibold tracking-tight text-ink">

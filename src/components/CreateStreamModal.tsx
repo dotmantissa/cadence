@@ -13,7 +13,7 @@ interface Props {
 }
 
 const field =
-  "w-full rounded-2xl border border-black/10 bg-paper-warm px-3.5 py-3 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20";
+  "w-full rounded-2xl border border-ink/10 bg-paper-warm px-3.5 py-3 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20";
 const labelCls = "mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink/50";
 
 export function CreateStreamModal({ onClose, onSuccess }: Props) {
@@ -109,7 +109,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         </div>
 
         {depositAmount > 0n && (
-          <div className="space-y-2 rounded-2xl border border-black/10 bg-volt-wash px-4 py-3">
+          <div className="space-y-2 rounded-2xl border border-ink/10 bg-volt-wash px-4 py-3">
             <div className="flex justify-between text-sm">
               <span className="text-ink/55">Streams at</span>
               <span className="font-mono font-medium text-ink">${formatUsdc(dailyRateRaw)} / day</span>
@@ -121,7 +121,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
             {balance !== undefined && (
               <div
                 className={cn(
-                  "flex justify-between border-t border-black/10 pt-2 text-xs font-medium",
+                  "flex justify-between border-t border-ink/10 pt-2 text-xs font-medium",
                   insufficientBalance ? "text-red-500" : "text-volt"
                 )}
               >

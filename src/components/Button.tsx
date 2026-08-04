@@ -22,8 +22,8 @@ interface Props {
 const styles: Record<Variant, string> = {
   volt: "bg-volt text-white hover:bg-volt-bright shadow-[0_8px_30px_-6px_rgba(43,68,231,0.6)]",
   ink: "bg-ink text-paper hover:bg-ink-soft",
-  paper: "bg-paper text-ink hover:bg-paper-dim border border-black/10",
-  ghost: "bg-transparent text-ink hover:bg-black/5 border border-black/10",
+  paper: "bg-paper text-ink hover:bg-paper-dim border border-ink/10",
+  ghost: "bg-transparent text-ink hover:bg-ink/5 border border-ink/10",
 };
 
 export function Button({

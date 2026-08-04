@@ -4,6 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "./index";
 import { users, payees, streamDrafts } from "./schema";
 import type { Caller } from "@/lib/privy-server";
+import { PROFILE_RESERVED } from "@/lib/username";
 
 /**
  * Fetch the users row for a caller, creating it on first sight and keeping the
@@ -46,6 +47,62 @@ export async function updateProfile(
     .where(eq(users.id, userId))
     .returning();
   return row;
+}
+
+/** Postgres unique-violation. Lets us turn a race into a clean "taken". */
+function isUniqueViolation(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    (e as { code?: string }).code === "23505"
+  );
+}
+
+/** Case-insensitive lookup by handle (handles are stored lowercase). */
+export async function getUserByUsername(username: string) {
+  const value = username.trim().toLowerCase();
+  const [row] = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, value))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Whether a handle can still be claimed. Reserved words are never available;
+ * otherwise it's free only if no row holds it. Assumes the caller has already
+ * validated the format.
+ */
+export async function isUsernameAvailable(username: string): Promise<boolean> {
+  const value = username.trim().toLowerCase();
+  if (PROFILE_RESERVED.has(value)) return false;
+  const existing = await getUserByUsername(value);
+  return existing === null;
+}
+
+/**
+ * Claim a handle for a user. Writes lowercase and relies on the unique index to
+ * settle races: if two people grab the same name at once, the loser gets a
+ * 23505 and we report it as taken rather than throwing.
+ */
+export async function setUsername(
+  userId: string,
+  username: string
+): Promise<{ user: typeof users.$inferSelect } | { taken: true }> {
+  const value = username.trim().toLowerCase();
+  try {
+    const [row] = await db
+      .update(users)
+      .set({ username: value, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return { user: row };
+  } catch (e) {
+    if (isUniqueViolation(e)) return { taken: true };
+    throw e;
+  }
 }
 
 export async function listPayees(ownerId: string) {

@@ -59,11 +59,11 @@ export default function EmployerPage() {
         </div>
 
         {/* Balance strip */}
-        <div className="relative mt-8 overflow-hidden rounded-4xl border border-black/10 bg-ink p-7 text-paper">
+        <div className="relative mt-8 overflow-hidden rounded-4xl border border-ink/10 bg-panel p-7 text-panel-foreground">
           <FlowField tone="ink" density={0.9} />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div>
-              <div className="flex items-center gap-2 text-xs text-paper/50">
+              <div className="flex items-center gap-2 text-xs text-panel-foreground/50">
                 <Wallet size={13} /> USDC balance
               </div>
               <p className="mt-2 font-mono text-4xl font-semibold tracking-tight">
@@ -71,7 +71,7 @@ export default function EmployerPage() {
               </p>
             </div>
             <div className="text-right">
-              <div className="flex items-center justify-end gap-2 text-xs text-paper/50">
+              <div className="flex items-center justify-end gap-2 text-xs text-panel-foreground/50">
                 <Waves size={13} /> active streams
               </div>
               <p className="mt-2 font-mono text-4xl font-semibold tracking-tight text-volt-bright">
@@ -83,7 +83,7 @@ export default function EmployerPage() {
 
         {/* Streams */}
         {!streams || streams.length === 0 ? (
-          <div className="mt-8 rounded-4xl border border-dashed border-black/15 bg-paper-warm p-14 text-center">
+          <div className="mt-8 rounded-4xl border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
             <p className="text-ink/60">No streams yet. The team is waiting.</p>
             <button
               onClick={() => setShowCreate(true)}

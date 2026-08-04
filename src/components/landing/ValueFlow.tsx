@@ -249,7 +249,7 @@ export function ValueFlow() {
   const L = layout(horizontal);
 
   return (
-    <div className="relative h-[460px] w-full overflow-hidden rounded-4xl border border-white/10 bg-ink sm:h-[520px] lg:h-[560px]">
+    <div className="relative h-[460px] w-full overflow-hidden rounded-4xl border border-white/10 bg-panel sm:h-[520px] lg:h-[560px]">
       {/* depth glows (CSS, not canvas) */}
       <div className="pointer-events-none absolute -left-10 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full bg-volt/25 blur-3xl" />
       <div className="pointer-events-none absolute right-0 top-0 h-56 w-56 rounded-full bg-volt-bright/10 blur-3xl" />
@@ -307,15 +307,15 @@ function TreasuryNode() {
           <Landmark size={15} />
         </span>
         <div className="leading-tight">
-          <p className="text-xs font-semibold text-paper">Treasury</p>
-          <p className="text-[10px] text-paper/45">paying 3 wallets</p>
+          <p className="text-xs font-semibold text-panel-foreground">Treasury</p>
+          <p className="text-[10px] text-panel-foreground/45">paying 3 wallets</p>
         </div>
       </div>
       <div className="mt-3 font-mono tabular-nums">
-        <span className="text-lg font-semibold text-paper sm:text-xl">
+        <span className="text-lg font-semibold text-panel-foreground sm:text-xl">
           ${whole}
         </span>
-        <span className="text-sm text-paper/40">.{frac}</span>
+        <span className="text-sm text-panel-foreground/40">.{frac}</span>
       </div>
     </motion.div>
   );
@@ -337,10 +337,10 @@ function WorkerNode({
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-      className="w-[128px] rounded-2xl border border-white/12 bg-ink/70 p-3 backdrop-blur-md sm:w-[148px]"
+      className="w-[128px] rounded-2xl border border-white/12 bg-panel/70 p-3 backdrop-blur-md sm:w-[148px]"
     >
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[11px] font-medium text-paper sm:text-xs">
+        <span className="font-mono text-[11px] font-medium text-panel-foreground sm:text-xs">
           {worker.handle}
         </span>
         <span className="relative flex h-1.5 w-1.5">
@@ -348,14 +348,14 @@ function WorkerNode({
           <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-volt-bright" />
         </span>
       </div>
-      <p className="mt-0.5 text-[9px] uppercase tracking-wider text-paper/35">
+      <p className="mt-0.5 text-[9px] uppercase tracking-wider text-panel-foreground/35">
         {worker.role}
       </p>
       <div className="mt-2 font-mono tabular-nums leading-none">
         <span className="text-sm font-semibold text-volt-bright sm:text-base">
           ${whole}
         </span>
-        <span className="text-[10px] text-paper/40">.{frac}</span>
+        <span className="text-[10px] text-panel-foreground/40">.{frac}</span>
       </div>
     </motion.div>
   );

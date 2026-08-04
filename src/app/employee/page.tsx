@@ -39,22 +39,22 @@ export default function EmployeePage() {
         </div>
 
         {/* Wallet balance */}
-        <div className="relative mt-8 overflow-hidden rounded-4xl border border-black/10 bg-ink p-7 text-paper">
+        <div className="relative mt-8 overflow-hidden rounded-4xl border border-ink/10 bg-panel p-7 text-panel-foreground">
           <FlowField tone="ink" density={0.9} />
           <div className="relative">
-            <div className="flex items-center gap-2 text-xs text-paper/50">
+            <div className="flex items-center gap-2 text-xs text-panel-foreground/50">
               <Wallet size={13} /> in your wallet
             </div>
             <p className="mt-2 font-mono text-4xl font-semibold tracking-tight sm:text-5xl">
               ${balance !== undefined ? formatUsdc(balance) : "0.00"}
             </p>
-            <p className="mt-2 text-xs text-paper/40">Whatever you have cashed out lands here.</p>
+            <p className="mt-2 text-xs text-panel-foreground/40">Whatever you have cashed out lands here.</p>
           </div>
         </div>
 
         {/* Streams */}
         {!streams || streams.length === 0 ? (
-          <div className="mt-8 rounded-4xl border border-dashed border-black/15 bg-paper-warm p-14 text-center">
+          <div className="mt-8 rounded-4xl border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
             <p className="text-ink/60">No streams pointed at this wallet yet.</p>
             <p className="mt-1 text-sm text-ink/40">
               Ask whoever signs the checks to spin one up for you.

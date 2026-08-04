@@ -53,7 +53,7 @@ export function HowItFlows() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.4 }}
               transition={{ delay: i * 0.1, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className="group relative overflow-hidden rounded-4xl border border-black/10 bg-paper p-8 transition-colors hover:border-black/20"
+              className="group relative overflow-hidden rounded-4xl border border-ink/10 bg-paper p-8 transition-colors hover:border-ink/20"
             >
               <div className="flex items-start justify-between">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-volt-wash text-volt transition-transform duration-500 ease-springy group-hover:scale-110">

@@ -3,10 +3,34 @@
 @tailwind utilities;
 
 :root {
-  --ink: #171618;
-  --paper: #ffffff;
+  /* Space-separated RGB channels drive the Tailwind ink/paper scales via
+     rgb(var(--c-…) / <alpha-value>). Light theme is the default. */
+  --c-ink: 23 22 24;
+  --c-ink-soft: 35 34 39;
+  --c-ink-softer: 46 45 51;
+  --c-ink-line: 51 50 58;
+  --c-paper: 255 255 255;
+  --c-paper-warm: 247 246 244;
+  --c-paper-dim: 237 236 234;
+
+  /* Legacy named vars, derived so raw CSS below flips with the theme too. */
+  --ink: rgb(var(--c-ink));
+  --paper: rgb(var(--c-paper));
+  --paper-warm: rgb(var(--c-paper-warm));
   --volt: #2b44e7;
-  --paper-warm: #f7f6f4;
+}
+
+/* Dark theme: ink becomes light, paper becomes dark. Only the channels flip;
+   everything derived from them follows. `volt` and the fixed `panel` tokens
+   stay put, so intentionally-dark panels look identical in both themes. */
+.dark {
+  --c-ink: 244 243 241;
+  --c-ink-soft: 226 224 220;
+  --c-ink-softer: 201 199 194;
+  --c-ink-line: 168 166 172;
+  --c-paper: 20 19 22;
+  --c-paper-warm: 28 27 31;
+  --c-paper-dim: 38 37 42;
 }
 
 * {
@@ -54,12 +78,12 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d5d3cf;
+  background: rgb(var(--c-ink) / 0.18);
   border-radius: 999px;
   border: 3px solid var(--paper);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #bcb9b3;
+  background: rgb(var(--c-ink) / 0.3);
 }
 
 /* Utility layers */
@@ -74,7 +98,7 @@ body {
   }
 
   .glass {
-    background: rgba(255, 255, 255, 0.7);
+    background: rgb(var(--c-paper) / 0.7);
     backdrop-filter: blur(16px) saturate(160%);
     -webkit-backdrop-filter: blur(16px) saturate(160%);
   }
@@ -90,7 +114,7 @@ body {
   }
 
   .hairline {
-    border: 1px solid rgba(23, 22, 24, 0.08);
+    border: 1px solid rgb(var(--c-ink) / 0.08);
   }
   .hairline-ink {
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -109,9 +133,9 @@ body {
   .skeleton {
     background: linear-gradient(
       90deg,
-      rgba(0, 0, 0, 0.04) 25%,
-      rgba(0, 0, 0, 0.07) 37%,
-      rgba(0, 0, 0, 0.04) 63%
+      rgb(var(--c-ink) / 0.04) 25%,
+      rgb(var(--c-ink) / 0.07) 37%,
+      rgb(var(--c-ink) / 0.04) 63%
     );
     background-size: 400% 100%;
     animation: shimmer 1.4s ease infinite;

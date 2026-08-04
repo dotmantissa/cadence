@@ -28,7 +28,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, ease }}
-                className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-3.5 py-1.5 text-xs font-medium text-ink/70 backdrop-blur"
+                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper/60 px-3.5 py-1.5 text-xs font-medium text-ink/70 backdrop-blur"
               >
                 <Radio size={13} className="text-volt" />
                 live on Arc Testnet, settling in ~350ms
@@ -112,7 +112,7 @@ export default function Home() {
 
       {/* NUMBERS */}
       <section className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8 lg:py-28">
-        <div className="grid gap-8 rounded-5xl border border-black/10 bg-paper p-10 sm:grid-cols-3 sm:p-14">
+        <div className="grid gap-8 rounded-5xl border border-ink/10 bg-paper p-10 sm:grid-cols-3 sm:p-14">
           {[
             { k: "350ms", v: "from hitting withdraw to the money being in your wallet" },
             { k: "every 1s", v: "the contract pushes a fresh slice of pay to your team" },
@@ -144,14 +144,14 @@ export default function Home() {
       </section>
 
       {/* CLOSING CTA */}
-      <section className="relative overflow-hidden bg-ink">
+      <section className="relative overflow-hidden bg-panel">
         <FlowField tone="ink" density={1.1} />
         <div className="relative mx-auto max-w-4xl px-5 py-28 text-center sm:px-8 lg:py-36">
           <Reveal>
-            <h2 className="text-4xl font-semibold tracking-tightest text-paper sm:text-6xl">
+            <h2 className="text-4xl font-semibold tracking-tightest text-panel-foreground sm:text-6xl">
               Nobody misses the 30th.
             </h2>
-            <p className="mx-auto mt-5 max-w-xl text-lg text-paper/60">
+            <p className="mx-auto mt-5 max-w-xl text-lg text-panel-foreground/60">
               Open a stream in about a minute and let the money handle itself.
               Once your team feels their balance move in real time, going back to
               a monthly batch is going to feel prehistoric.

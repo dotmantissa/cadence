@@ -83,14 +83,14 @@ export function WalletOnboarding() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/70 p-4 backdrop-blur-md"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-panel/70 p-4 backdrop-blur-md"
         >
           <motion.div
             initial={{ opacity: 0, y: 24, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: 0.4, ease: [0.34, 1.56, 0.64, 1] }}
-            className="relative w-full max-w-md overflow-hidden rounded-4xl border border-white/10 bg-ink p-7 text-paper shadow-[0_40px_120px_-30px_rgba(0,0,0,0.8)]"
+            className="relative w-full max-w-md overflow-hidden rounded-4xl border border-white/10 bg-panel p-7 text-panel-foreground shadow-[0_40px_120px_-30px_rgba(0,0,0,0.8)]"
           >
             <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-volt/30 blur-3xl" />
 
@@ -109,7 +109,7 @@ export function WalletOnboarding() {
                     <h2 className="mt-3 text-2xl font-semibold tracking-tight">
                       You are in. Now grab a wallet.
                     </h2>
-                    <p className="mt-2 text-sm leading-relaxed text-paper/55">
+                    <p className="mt-2 text-sm leading-relaxed text-panel-foreground/55">
                       You need somewhere for the money to land. Make a fresh one
                       on Arc, or bring a wallet you already run. Privy locks the
                       key in its secure enclave either way.
@@ -132,7 +132,7 @@ export function WalletOnboarding() {
                           <span className="block text-sm font-semibold">
                             Generate a fresh Arc wallet
                           </span>
-                          <span className="block text-xs text-paper/50">
+                          <span className="block text-xs text-panel-foreground/50">
                             Made in a second, nothing to install
                           </span>
                         </span>
@@ -153,7 +153,7 @@ export function WalletOnboarding() {
                           <span className="block text-sm font-semibold">
                             Import a wallet I already have
                           </span>
-                          <span className="block text-xs text-paper/50">
+                          <span className="block text-xs text-panel-foreground/50">
                             Bring your key, Privy takes it from here
                           </span>
                         </span>
@@ -172,21 +172,21 @@ export function WalletOnboarding() {
                         setMode("choose");
                         setError(null);
                       }}
-                      className="mb-4 inline-flex items-center gap-1.5 text-xs text-paper/50 transition-colors hover:text-paper"
+                      className="mb-4 inline-flex items-center gap-1.5 text-xs text-panel-foreground/50 transition-colors hover:text-panel-foreground"
                     >
                       <ArrowLeft size={13} /> back
                     </button>
                     <h2 className="text-2xl font-semibold tracking-tight">
                       Import your wallet
                     </h2>
-                    <p className="mt-2 text-sm leading-relaxed text-paper/55">
+                    <p className="mt-2 text-sm leading-relaxed text-panel-foreground/55">
                       Paste your private key. It goes straight into Privy&apos;s
                       secure enclave and gets bound to your account. Cadence never
                       sees it, stores it, or logs it.
                     </p>
 
                     <label className="mt-5 block">
-                      <span className="mb-1.5 block text-xs uppercase tracking-widest text-paper/40">
+                      <span className="mb-1.5 block text-xs uppercase tracking-widest text-panel-foreground/40">
                         Private key
                       </span>
                       <div className="relative">
@@ -197,12 +197,12 @@ export function WalletOnboarding() {
                           placeholder="0x…"
                           autoComplete="off"
                           spellCheck={false}
-                          className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 pr-11 font-mono text-sm text-paper outline-none transition-colors placeholder:text-paper/25 focus:border-volt"
+                          className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 pr-11 font-mono text-sm text-panel-foreground outline-none transition-colors placeholder:text-panel-foreground/25 focus:border-volt"
                         />
                         <button
                           type="button"
                           onClick={() => setReveal((v) => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-paper/40 transition-colors hover:text-paper"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-panel-foreground/40 transition-colors hover:text-panel-foreground"
                           aria-label={reveal ? "Hide key" : "Show key"}
                         >
                           {reveal ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -236,13 +236,13 @@ export function WalletOnboarding() {
               )}
 
               <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
-                <span className="inline-flex items-center gap-1.5 text-xs text-paper/40">
+                <span className="inline-flex items-center gap-1.5 text-xs text-panel-foreground/40">
                   <ShieldCheck size={13} className="text-volt-bright" />
                   Secured by Privy
                 </span>
                 <button
                   onClick={() => logout()}
-                  className="inline-flex items-center gap-1.5 text-xs text-paper/40 transition-colors hover:text-paper"
+                  className="inline-flex items-center gap-1.5 text-xs text-panel-foreground/40 transition-colors hover:text-panel-foreground"
                 >
                   <LogOut size={13} /> Not now, sign out
                 </button>

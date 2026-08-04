@@ -43,8 +43,8 @@ export function AudienceSplit() {
               <div
                 className={`relative flex h-full flex-col overflow-hidden rounded-5xl p-9 transition-all duration-500 ease-liquid sm:p-11 ${
                   dark
-                    ? "bg-ink text-paper"
-                    : "bg-volt text-paper"
+                    ? "bg-panel text-panel-foreground"
+                    : "bg-volt text-panel-foreground"
                 }`}
               >
                 {/* moving glow */}

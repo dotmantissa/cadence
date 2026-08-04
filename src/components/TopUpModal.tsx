@@ -13,7 +13,7 @@ interface Props {
 }
 
 const field =
-  "w-full rounded-2xl border border-black/10 bg-paper-warm px-3.5 py-3 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20";
+  "w-full rounded-2xl border border-ink/10 bg-paper-warm px-3.5 py-3 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20";
 
 export function TopUpModal({ streamId, onClose }: Props) {
   const { address } = useAccount();

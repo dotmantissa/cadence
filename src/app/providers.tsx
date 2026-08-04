@@ -37,6 +37,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
           loginMethods: ["wallet", "email"],
           defaultChain: arcTestnet,
           supportedChains: [arcTestnet],
+          // Coinbase Smart Wallet does NOT support Arc's custom chain 5042002, so
+          // its connector throws "not supported by Coinbase Smart Wallet: 5042002"
+          // and never initializes — leaving wagmi stuck at "3 of 4 connectors" past
+          // its reconnect timeout. That hung connector makes useAccount()'s address
+          // flap undefined↔defined, which churns every read hook's query key and
+          // remounts the cards (the flicker/never-loads loop). eoaOnly brings up
+          // only the standard Coinbase EOA connector, so the stack settles cleanly.
+          externalWallets: {
+            coinbaseWallet: { config: { preference: { options: "eoaOnly" } } },
+          },
           // We never auto-spin an embedded wallet. Email users explicitly choose
           // to generate one or import their own during onboarding.
           embeddedWallets: {

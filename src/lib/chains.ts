@@ -16,21 +16,24 @@ export const arcTestnet = defineChain({
     // Access-Control-Allow-* headers on OPTIONS, so it is unusable from the browser
     // even though server-side curl to it returns 200 (which masked this in probes).
     // The three docs-listed provider mirrors below all pass preflight
-    // (blockdaemon: `*`; drpc/quicknode: echo Origin). We list several so wagmi can
-    // fall back if one provider is briefly unavailable. See docs.arc.io/arc/references/rpc-endpoints.
+    // (blockdaemon: `*`; drpc/quicknode: echo Origin). Order is by measured
+    // robustness under sustained multi-hook polling: blockdaemon and drpc never
+    // rate-limit; quicknode is fastest but is the ONLY one that returns HTTP 429
+    // under bursts, so it sits last as a fast-path fallback rather than primary.
+    // See docs.arc.io/arc/references/rpc-endpoints.
     default: {
       http: [
+        "https://rpc.blockdaemon.testnet.arc.io",
         "https://rpc.drpc.testnet.arc.io",
         "https://rpc.quicknode.testnet.arc.io",
-        "https://rpc.blockdaemon.testnet.arc.io",
       ],
       webSocket: ["wss://rpc.drpc.testnet.arc.io"],
     },
     public: {
       http: [
+        "https://rpc.blockdaemon.testnet.arc.io",
         "https://rpc.drpc.testnet.arc.io",
         "https://rpc.quicknode.testnet.arc.io",
-        "https://rpc.blockdaemon.testnet.arc.io",
       ],
       webSocket: ["wss://rpc.drpc.testnet.arc.io"],
     },

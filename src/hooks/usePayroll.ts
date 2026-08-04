@@ -119,7 +119,7 @@ export function useEmployerStreams(employer: `0x${string}` | undefined) {
     abi: PAYROLL_ABI,
     functionName: "getEmployerStreams",
     args: employer ? [employer] : undefined,
-    query: { enabled: !!employer, refetchInterval: 5000 },
+    query: { enabled: !!employer, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
 }
 
@@ -129,7 +129,7 @@ export function useEmployeeStreams(employee: `0x${string}` | undefined) {
     abi: PAYROLL_ABI,
     functionName: "getEmployeeStreams",
     args: employee ? [employee] : undefined,
-    query: { enabled: !!employee, refetchInterval: 5000 },
+    query: { enabled: !!employee, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
 }
 
@@ -139,7 +139,7 @@ export function useUsdcBalance(address: `0x${string}` | undefined) {
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: !!address, refetchInterval: 3000 },
+    query: { enabled: !!address, refetchInterval: 3000, placeholderData: keepPreviousData },
   });
 }
 
@@ -149,7 +149,7 @@ export function useUsdcAllowance(owner: `0x${string}` | undefined) {
     abi: ERC20_ABI,
     functionName: "allowance",
     args: owner ? [owner, PAYROLL_ADDRESS] : undefined,
-    query: { enabled: !!owner, refetchInterval: 5000 },
+    query: { enabled: !!owner, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
 }
 
@@ -355,7 +355,7 @@ export function usePayerRequests(payer: `0x${string}` | undefined) {
     abi: PAYROLL_ABI,
     functionName: "getPayerRequests",
     args: payer ? [payer] : undefined,
-    query: { enabled: !!payer, refetchInterval: 5000 },
+    query: { enabled: !!payer, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
 }
 
@@ -366,7 +366,7 @@ export function usePayeeRequests(payee: `0x${string}` | undefined) {
     abi: PAYROLL_ABI,
     functionName: "getPayeeRequests",
     args: payee ? [payee] : undefined,
-    query: { enabled: !!payee, refetchInterval: 5000 },
+    query: { enabled: !!payee, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
 }
 

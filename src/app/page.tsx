@@ -7,7 +7,6 @@ import { Button } from "@/components/Button";
 import { ValueFlow } from "@/components/landing/ValueFlow";
 import { FlowField } from "@/components/motion/FlowField";
 import { Reveal } from "@/components/motion/Reveal";
-import { Marquee } from "@/components/landing/Marquee";
 import { FeatureCarousel } from "@/components/landing/FeatureCarousel";
 import { HowItFlows } from "@/components/landing/HowItFlows";
 import { AudienceSplit } from "@/components/landing/AudienceSplit";
@@ -98,8 +97,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      <Marquee />
 
       {/* FEATURES */}
       <section className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8 lg:py-32">

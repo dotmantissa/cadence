@@ -31,8 +31,8 @@ type Pt = { x: number; y: number };
 function layout(horizontal: boolean) {
   if (horizontal) {
     return {
-      treasury: { x: 0.14, y: 0.5 },
-      workers: WORKERS.map((_, i) => ({ x: 0.85, y: [0.21, 0.5, 0.79][i] })),
+      treasury: { x: 0.22, y: 0.5 },
+      workers: WORKERS.map((_, i) => ({ x: 0.82, y: [0.21, 0.5, 0.79][i] })),
     };
   }
   return {

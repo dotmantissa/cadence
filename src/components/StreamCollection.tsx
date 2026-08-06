@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, X, SlidersHorizontal, FileText, Loader2 } from "lucide-react";
+import { Search, X, SlidersHorizontal, FileText, Loader2, Eye } from "lucide-react";
 import { StreamCard } from "./StreamCard";
 import { StreamReceiptModal } from "./StreamReceiptModal";
+import { StatementPreviewModal } from "./StatementPreviewModal";
 import { type StreamMeta } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
@@ -80,6 +81,7 @@ export function StreamCollection({
   const [receipt, setReceipt] = useState<StreamMeta | null>(null);
   const [identities, setIdentities] = useState<Record<string, Identity>>({});
   const [statementBusy, setStatementBusy] = useState(false);
+  const [showStatement, setShowStatement] = useState(false);
 
   const counterpartyOf = (s: StreamMeta) =>
     (perspective === "employer" ? s.employee : s.employer).toLowerCase();
@@ -252,8 +254,8 @@ export function StreamCollection({
             )}
           </button>
           <button
-            onClick={downloadStatement}
-            disabled={statementBusy || visible.length === 0}
+            onClick={() => setShowStatement(true)}
+            disabled={visible.length === 0}
             className="inline-flex h-10 items-center gap-2 rounded-full border border-ink/10 bg-paper-warm px-4 text-sm font-medium text-ink/70 transition-colors hover:border-ink/25 hover:text-ink disabled:opacity-40"
             title={
               hasDateFilter || query
@@ -261,12 +263,21 @@ export function StreamCollection({
                 : "Statement of all your streams"
             }
           >
+            <Eye size={15} />
+            Statement
+          </button>
+          <button
+            onClick={downloadStatement}
+            disabled={statementBusy || visible.length === 0}
+            className="inline-flex h-10 items-center gap-2 rounded-full border border-volt/30 bg-volt-wash px-4 text-sm font-medium text-volt transition-colors hover:bg-volt/10 disabled:opacity-40"
+            title="Download statement as PDF"
+          >
             {statementBusy ? (
               <Loader2 size={15} className="animate-spin" />
             ) : (
               <FileText size={15} />
             )}
-            Statement
+            PDF
           </button>
         </div>
       </div>
@@ -357,6 +368,16 @@ export function StreamCollection({
             null
           }
           onClose={() => setReceipt(null)}
+        />
+      )}
+
+      {showStatement && account && (
+        <StatementPreviewModal
+          account={account}
+          perspective={perspective}
+          streams={visible}
+          identities={identities}
+          onClose={() => setShowStatement(false)}
         />
       )}
     </div>

@@ -16,6 +16,8 @@ interface Props {
   dismissable?: boolean;
   children: React.ReactNode;
   className?: string;
+  /** Make the modal wider for content-heavy views like statements. */
+  wide?: boolean;
 }
 
 /** Shared modal shell: dark scrim, spring-in panel, escape + scroll lock. */
@@ -26,6 +28,7 @@ export function Modal({
   dismissable = true,
   children,
   className = "",
+  wide = false,
 }: Props) {
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -58,7 +61,9 @@ export function Modal({
           exit={{ opacity: 0, y: 12, scale: 0.98 }}
           transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
           onClick={(e) => e.stopPropagation()}
-          className={`w-full max-w-md overflow-hidden rounded-none border border-ink/10 bg-paper p-6 shadow-[0_40px_100px_-40px_rgba(23,22,24,0.5)] ${className}`}
+          className={`w-full ${
+            wide ? "max-w-5xl" : "max-w-md"
+          } overflow-hidden rounded-none border border-ink/10 bg-paper p-6 shadow-[0_40px_100px_-40px_rgba(23,22,24,0.5)] ${className}`}
         >
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold tracking-tightest text-ink">{title}</h2>

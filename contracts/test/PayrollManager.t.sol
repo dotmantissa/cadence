@@ -58,7 +58,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", 0);
 
-        (address emp,,,,,,bool active,) = payroll.streams(id);
+        (address emp,,,,,,,,bool active,) = payroll.streams(id);
         assertEq(emp, employer);
         assertTrue(active);
     }
@@ -90,7 +90,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employee);
         payroll.withdraw(id);
 
-        (, , , , , , bool active,) = payroll.streams(id);
+        (, , , , , , , , bool active,) = payroll.streams(id);
         assertFalse(active);
 
         usdc.mint(employer, 1000e6);
@@ -99,7 +99,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employer);
         payroll.topUp(id, 1000e6);
 
-        (, , , , , , bool activeAfter,) = payroll.streams(id);
+        (, , , , , , , , bool activeAfter,) = payroll.streams(id);
         assertTrue(activeAfter);
     }
 
@@ -134,7 +134,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", start);
 
-        (, , , uint64 startTime, uint64 lastClaim, , bool active,) = payroll.streams(id);
+        (, , , uint64 startTime, uint64 lastClaim, , , , bool active,) = payroll.streams(id);
         assertEq(startTime, start);
         assertEq(lastClaim, start);
         assertTrue(active); // active, but not yet flowing
@@ -192,7 +192,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", past);
 
-        (, , , uint64 startTime,,,,) = payroll.streams(id);
+        (, , , uint64 startTime,,,,,,) = payroll.streams(id);
         assertEq(startTime, uint64(block.timestamp)); // clamped to now, not 500s ago
         assertEq(payroll.accrued(id), 0);
     }
@@ -248,7 +248,7 @@ contract PayrollManagerTest is Test {
         // Funds escrowed into the contract.
         assertEq(usdc.balanceOf(address(payroll)), DEPOSIT);
 
-        (address emp, address wrk, uint128 rate, , , , bool active,) = payroll.streams(streamId);
+        (address emp, address wrk, uint128 rate, , , , , , bool active,) = payroll.streams(streamId);
         assertEq(emp, employer);
         assertEq(wrk, employee);
         assertEq(rate, RATE);
@@ -347,7 +347,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employee);
         uint256 streamId = payroll.acceptCounter(reqId);
 
-        (address emp, address wrk, uint128 rate, , , , bool active,) = payroll.streams(streamId);
+        (address emp, address wrk, uint128 rate, , , , , , bool active,) = payroll.streams(streamId);
         assertEq(emp, employer);
         assertEq(wrk, employee);
         assertEq(rate, newRate);
@@ -443,5 +443,133 @@ contract PayrollManagerTest is Test {
         assertEq(payer.length, 2);
         assertEq(payee[0], r1);
         assertEq(payee[1], r2);
+    }
+
+    // ---- Hardened accounting: static deposit, cumulative withdrawn, no dust ----
+
+    /// Reads the two new accounting fields (indexes 6 and 7) from the tuple.
+    function _accounting(uint256 id) internal view returns (uint128 totalDeposited, uint128 withdrawn) {
+        (, , , , , , uint128 total, uint128 wd, ,) = payroll.streams(id);
+        return (total, wd);
+    }
+
+    function _remaining(uint256 id) internal view returns (uint128 deposit) {
+        (, , , , , uint128 dep, , , ,) = payroll.streams(id);
+        return dep;
+    }
+
+    function test_TotalDepositedStaticAcrossWithdraw() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        (uint128 total0,) = _accounting(id);
+        assertEq(total0, DEPOSIT);
+
+        // A mid-stream withdrawal shrinks the remaining escrow but must NOT
+        // change totalDeposited — that's the "static deposit on the receipt" fix.
+        vm.warp(block.timestamp + 60);
+        vm.prank(employee);
+        payroll.withdraw(id);
+
+        (uint128 total1, uint128 withdrawn1) = _accounting(id);
+        assertEq(total1, DEPOSIT); // unchanged by the claim
+        assertEq(withdrawn1, 60e6); // cumulative paid out
+        assertEq(_remaining(id), DEPOSIT - 60e6); // remaining shrank
+    }
+
+    function test_TotalDepositedGrowsOnTopUp() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        usdc.mint(employer, 1000e6);
+        vm.prank(employer);
+        usdc.approve(address(payroll), 1000e6);
+        vm.prank(employer);
+        payroll.topUp(id, 1000e6);
+
+        (uint128 total,) = _accounting(id);
+        assertEq(total, DEPOSIT + 1000e6); // only a top-up moves it
+    }
+
+    function test_WithdrawnAccumulatesAcrossMultipleClaims() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        vm.warp(block.timestamp + 30);
+        vm.prank(employee);
+        payroll.withdraw(id);
+        vm.warp(block.timestamp + 45);
+        vm.prank(employee);
+        payroll.withdraw(id);
+
+        (, uint128 withdrawn) = _accounting(id);
+        assertEq(withdrawn, 75e6); // 30 + 45, monotonic
+        assertEq(usdc.balanceOf(employee), 75e6);
+    }
+
+    function test_NoDustStranded_FullDrainIsClaimable() public {
+        // Deposit that is NOT a whole multiple of the rate: 5 seconds + a
+        // sub-second remainder. Old contract deactivated at deposit < rate and
+        // stranded that remainder; the hardened one lets the employee take it all.
+        uint128 rate = 1e6;
+        uint128 deposit = 5e6 + 250000; // 5.25s of pay
+        usdc.mint(employer, deposit);
+        vm.prank(employer);
+        usdc.approve(address(payroll), deposit);
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, rate, deposit, "INV", 0);
+
+        // Let the whole thing accrue, then withdraw.
+        vm.warp(block.timestamp + 10);
+        vm.prank(employee);
+        payroll.withdraw(id);
+
+        // Employee received the ENTIRE deposit — no dust left in the contract.
+        assertEq(usdc.balanceOf(employee), deposit);
+        assertEq(_remaining(id), 0);
+        assertEq(usdc.balanceOf(address(payroll)), 0);
+
+        (uint128 total, uint128 withdrawn) = _accounting(id);
+        assertEq(total, deposit);
+        assertEq(withdrawn, deposit);
+
+        // And it's now inactive (fully settled), so no further withdrawal.
+        vm.warp(block.timestamp + 5);
+        vm.prank(employee);
+        vm.expectRevert("stream not active");
+        payroll.withdraw(id);
+    }
+
+    function test_CancelRecordsFinalPayoutInWithdrawn() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        vm.warp(block.timestamp + 10);
+        vm.prank(employer);
+        payroll.cancelStream(id);
+
+        (uint128 total, uint128 withdrawn) = _accounting(id);
+        assertEq(total, DEPOSIT); // original commitment preserved for the receipt
+        assertEq(withdrawn, 10e6); // the 10s paid out on cancel is recorded
+        assertEq(_remaining(id), 0);
+    }
+
+    function test_ContractNeverStrandsFunds_Invariant() public {
+        // After a full lifecycle (create, partial withdraw, cancel) the contract
+        // holds exactly zero — everything is either paid out or refunded.
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        vm.warp(block.timestamp + 100);
+        vm.prank(employee);
+        payroll.withdraw(id);
+
+        vm.warp(block.timestamp + 50);
+        vm.prank(employer);
+        payroll.cancelStream(id);
+
+        assertEq(usdc.balanceOf(address(payroll)), 0);
+        // Employee got 150s total; employer refunded the rest of the original.
+        assertEq(usdc.balanceOf(employee), 150e6);
     }
 }

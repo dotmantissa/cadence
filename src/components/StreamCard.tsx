@@ -1,11 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass } from "lucide-react";
+import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass, ExternalLink } from "lucide-react";
 import type { StreamMeta } from "@/hooks/usePayroll";
 import { streamMath } from "@/lib/stream-math";
 import { StreamTicker } from "./StreamTicker";
-import { formatRunway, rateToDaily, rateToMonthly, shortenAddress } from "@/lib/utils";
+import { formatRunway, formatUsdc, rateToDaily, rateToMonthly, shortenAddress, streamExplorerUrl } from "@/lib/utils";
+import { PAYROLL_ADDRESS } from "@/lib/contracts";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -24,12 +25,17 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
   // Accrued + runway are exact functions of the tuple we already have, so we
   // derive them locally instead of firing three more polling reads per card.
   const nowSec = Math.floor(Date.now() / 1000);
-  const { notStarted, flowing, streaming, phase, unclaimed, streamedSoFar, runwaySeconds } =
+  const { notStarted, flowing, streaming, phase, unclaimed, streamedSoFar, remaining, committed, runwaySeconds } =
     streamMath(stream, nowSec);
   const secondsUntilStart = Number(startTime) - nowSec;
   const lowRunway = streaming && runwaySeconds < 86400;
   const awaitingClaim = phase === "awaiting_claim";
   const claimed = phase === "claimed";
+
+  // Only annualize when the commitment actually spans a month — a one-day stream
+  // showing "$59.62/mo" invents a horizon that doesn't exist.
+  const plannedSeconds = ratePerSecond > 0n ? committed / ratePerSecond : 0n;
+  const showMonthly = plannedSeconds >= 2592000n; // 30 days
 
   // Employee card shows what they can cash out (unclaimed); employer card shows
   // the cumulative total streamed. Both tick up at the same rate.
@@ -107,7 +113,9 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
         </div>
         <div className={cn("text-right text-xs", active ? "text-panel-foreground/50" : "text-ink/45")}>
           <div className="font-mono">${rateToDaily(ratePerSecond)}<span className="opacity-50">/day</span></div>
-          <div className="font-mono">${rateToMonthly(ratePerSecond)}<span className="opacity-50">/mo</span></div>
+          {showMonthly && (
+            <div className="font-mono">${rateToMonthly(ratePerSecond)}<span className="opacity-50">/mo</span></div>
+          )}
         </div>
       </div>
 
@@ -123,7 +131,7 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
             ? "total streamed"
             : perspective === "employee"
             ? "ready to withdraw"
-            : "streamed so far"}
+            : "streamed"}
         </p>
         <div className="mt-1.5">
           <StreamTicker
@@ -133,6 +141,11 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
             tone={active ? "ink" : "paper"}
           />
         </div>
+        {!notStarted && !claimed && remaining > 0n && (
+          <p className={cn("mt-1.5 font-mono text-xs", active ? "text-panel-foreground/40" : "text-ink/40")}>
+            ${formatUsdc(remaining)} <span className="opacity-60">left</span>
+          </p>
+        )}
       </div>
 
       <div
@@ -214,6 +227,23 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
             )}
           </>
         )}
+      </div>
+
+      <div className="relative mt-4 flex justify-end">
+        <a
+          href={streamExplorerUrl(PAYROLL_ADDRESS, streamId)}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "inline-flex items-center gap-1 text-xs transition-colors",
+            active
+              ? "text-panel-foreground/40 hover:text-panel-foreground/70"
+              : "text-ink/35 hover:text-ink/60"
+          )}
+        >
+          View on explorer <ExternalLink size={11} />
+        </a>
       </div>
     </motion.div>
   );

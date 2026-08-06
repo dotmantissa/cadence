@@ -14,7 +14,9 @@ contract PayrollManager is ReentrancyGuard {
         uint128 ratePerSecond; // USDC units (6 decimals), e.g. 1e6 = $1/sec
         uint64 startTime;
         uint64 lastClaimTime;
-        uint128 deposit; // remaining employer deposit
+        uint128 deposit; // remaining escrow balance (shrinks on withdraw, 0 on cancel/drain)
+        uint128 totalDeposited; // STATIC: original deposit + all top-ups; only grows on topUp
+        uint128 withdrawn; // cumulative USDC paid out to the employee (monotonic)
         bool active;
         string invoiceRef; // arbitrary invoice/tax reference string
     }
@@ -160,6 +162,8 @@ contract PayrollManager is ReentrancyGuard {
             startTime: start,
             lastClaimTime: start,
             deposit: deposit,
+            totalDeposited: deposit,
+            withdrawn: 0,
             active: true,
             invoiceRef: invoiceRef
         });
@@ -180,10 +184,15 @@ contract PayrollManager is ReentrancyGuard {
         require(owed > 0, "nothing to withdraw");
 
         s.deposit -= owed;
+        s.withdrawn += owed;
         s.lastClaimTime = uint64(block.timestamp);
 
-        // Auto-deactivate if deposit drained
-        if (s.deposit < s.ratePerSecond) {
+        // Deactivate only when the escrow is fully drained. Because `_accrued`
+        // caps at the whole remaining deposit, once elapsed time covers the
+        // balance the employee's withdrawal takes ALL of it — no sub-second
+        // "dust" can strand in the contract. A stream with runway left stays
+        // active regardless of rate.
+        if (s.deposit == 0) {
             s.active = false;
         }
 
@@ -199,7 +208,10 @@ contract PayrollManager is ReentrancyGuard {
 
         usdc.transferFrom(msg.sender, address(this), amount);
         s.deposit += amount;
+        s.totalDeposited += amount;
 
+        // Reactivating a drained stream restarts its accrual clock from now, so
+        // the gap while it sat empty is never retroactively owed.
         if (!s.active && s.deposit >= s.ratePerSecond) {
             s.active = true;
             s.lastClaimTime = uint64(block.timestamp);
@@ -217,6 +229,10 @@ contract PayrollManager is ReentrancyGuard {
         uint128 owed = _accrued(s);
         uint128 refund = s.deposit - owed;
 
+        // Record the final payout so cumulative accounting (withdrawn / streamed)
+        // stays exact after a cancel, and advance the claim clock to match.
+        s.withdrawn += owed;
+        s.lastClaimTime = uint64(block.timestamp);
         s.active = false;
         s.deposit = 0;
 

@@ -25,3 +25,4 @@ contracts/out/
 *.log
 npm-debug.log*
 .vercel
+.env*

@@ -73,6 +73,8 @@ export const PAYROLL_ABI = [
       { name: "startTime", type: "uint64", internalType: "uint64" },
       { name: "lastClaimTime", type: "uint64", internalType: "uint64" },
       { name: "deposit", type: "uint128", internalType: "uint128" },
+      { name: "totalDeposited", type: "uint128", internalType: "uint128" },
+      { name: "withdrawn", type: "uint128", internalType: "uint128" },
       { name: "active", type: "bool", internalType: "bool" },
       { name: "invoiceRef", type: "string", internalType: "string" },
     ],

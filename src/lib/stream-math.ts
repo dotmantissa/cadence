@@ -12,11 +12,14 @@ import type { StreamMeta } from "@/hooks/usePayroll";
  *   - Both values are exact functions of the tuple we already batch-fetch, so a
  *     per-card `useAccrued`/`useRunway` poll is pure waterfall we can delete.
  *
- * The cumulative figure is reconstructed from the on-chain claim clock, which
- * only ever advances on a withdrawal:
- *   withdrawn      = rate * (lastClaimTime - startTime)      // paid out to date
+ * The cumulative figure combines the on-chain cumulative `withdrawn` (which the
+ * contract now tracks directly and never resets) with the currently-claimable
+ * amount:
+ *   withdrawn      = on-chain cumulative paid out (monotonic, survives cancel)
  *   unclaimed      = active ? min(deposit, rate * (now - lastClaimTime)) : 0
  *   streamedSoFar  = withdrawn + unclaimed                    // never resets
+ *   committed      = totalDeposited (STATIC original + top-ups)
+ *   remaining      = committed - streamedSoFar                // the "Left" figure
  *
  * For a live stream that's never run dry, streamedSoFar == rate*(now-startTime)
  * and a withdrawal merely shifts value from the `unclaimed` term into the
@@ -41,12 +44,16 @@ export type StreamPhase =
   | "ended"; // inactive with nothing ever withdrawn (e.g. cancelled early)
 
 export interface StreamMath {
-  /** USDC (6dp) paid out to the employee to date. */
+  /** USDC (6dp) paid out to the employee to date — read straight from chain. */
   withdrawn: bigint;
   /** USDC (6dp) accrued but not yet withdrawn — what "Cash out" pays. */
   unclaimed: bigint;
   /** USDC (6dp) total ever streamed to the employee (cumulative, monotonic). */
   streamedSoFar: bigint;
+  /** USDC (6dp) STATIC original commitment (first deposit + top-ups). Never shrinks on a claim. */
+  committed: bigint;
+  /** USDC (6dp) still to be streamed = committed − streamedSoFar (the "Left" figure). */
+  remaining: bigint;
   /** Seconds of deposit left at the current rate (0 when idle). */
   runwaySeconds: number;
   /** Active on-chain but its start is still in the future. */
@@ -66,9 +73,10 @@ export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now()
   const notStarted = s.active && s.startTime > now;
   const flowing = s.active && !notStarted;
 
-  // The claim clock only advances on a withdrawal, so the window between start
-  // and lastClaimTime is exactly what has already been paid out.
-  const withdrawn = s.lastClaimTime > s.startTime ? rate * (s.lastClaimTime - s.startTime) : 0n;
+  // Paid out to date is now authoritative on-chain (the contract tracks a
+  // cumulative `withdrawn` that survives cancels and drain-exact payouts), so
+  // we read it directly instead of reconstructing from the claim clock.
+  const withdrawn = s.withdrawn;
 
   // Currently claimable — capped at the remaining deposit, matching the
   // contract's `_accrued`. Zero unless the stream is actively flowing.
@@ -80,8 +88,16 @@ export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now()
 
   const streamedSoFar = withdrawn + unclaimed;
 
-  const remaining = s.deposit > unclaimed ? s.deposit - unclaimed : 0n;
-  const runwaySeconds = flowing && rate > 0n ? Number(remaining / rate) : 0;
+  // The original commitment is static (never shrinks when the payee claims);
+  // "Left" is simply what of it hasn't been streamed yet. Clamp both against
+  // rounding so the UI can never show a negative or an over-100% figure.
+  const committed = s.totalDeposited;
+  const remaining = committed > streamedSoFar ? committed - streamedSoFar : 0n;
+
+  // Runway in seconds = escrow not yet earned, over the rate. `deposit` is the
+  // remaining escrow; subtract what's already claimable to avoid double-count.
+  const escrowLeft = s.deposit > unclaimed ? s.deposit - unclaimed : 0n;
+  const runwaySeconds = flowing && rate > 0n ? Number(escrowLeft / rate) : 0;
 
   // A flowing stream is only genuinely *streaming* while it still has runway.
   // Once elapsed time has earned the whole remaining deposit (accrual capped at
@@ -109,6 +125,8 @@ export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now()
     withdrawn,
     unclaimed,
     streamedSoFar,
+    committed,
+    remaining,
     runwaySeconds,
     notStarted,
     flowing,

@@ -52,6 +52,16 @@ export function shortenAddress(addr: string): string {
 }
 
 /**
+ * ArcScan link to the PayrollManager contract's on-chain state — the shareable
+ * proof that a stream exists and its terms. A stream isn't its own address, so
+ * the contract page (where `streams(id)` can be read) is the canonical anchor;
+ * we hash the stream id so a recipient lands with the right one in mind.
+ */
+export function streamExplorerUrl(contractAddress: string, streamId: bigint): string {
+  return `https://testnet.arcscan.app/address/${contractAddress}#${streamId.toString()}`;
+}
+
+/**
  * Format an on-chain unix seconds value (bigint) as a readable local timestamp.
  * Returns a dash for the zero/never sentinel so receipts don't show "1970".
  */

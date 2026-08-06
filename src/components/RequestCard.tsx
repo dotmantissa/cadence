@@ -69,6 +69,10 @@ export function RequestCard({
   const counterExpired = isCountered && secondsLeft <= 0;
   const badge = BADGE[status];
 
+  // Only annualize when the requested commitment spans a month or more.
+  const plannedSeconds = ratePerSecond > 0n ? deposit / ratePerSecond : 0n;
+  const showMonthly = plannedSeconds >= 2592000n; // 30 days
+
   const counterparty = perspective === "payer" ? request.payee : request.payer;
   const cpLabel = counterpartyName ? `@${counterpartyName}` : shortenAddress(counterparty);
   const scheduled = startAt > 0n && Number(startAt) > nowSec;
@@ -115,9 +119,11 @@ export function RequestCard({
           <div className="font-mono">
             ${rateToDaily(ratePerSecond)}<span className="opacity-50">/day</span>
           </div>
-          <div className="font-mono">
-            ${rateToMonthly(ratePerSecond)}<span className="opacity-50">/mo</span>
-          </div>
+          {showMonthly && (
+            <div className="font-mono">
+              ${rateToMonthly(ratePerSecond)}<span className="opacity-50">/mo</span>
+            </div>
+          )}
         </div>
       </div>
 

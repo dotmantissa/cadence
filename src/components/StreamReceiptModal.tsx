@@ -11,17 +11,20 @@ import {
   Clock,
   Hourglass,
   CheckCircle2,
+  ExternalLink,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { Modal } from "./Modal";
 import { StreamMeta } from "@/hooks/usePayroll";
+import { PAYROLL_ADDRESS } from "@/lib/contracts";
 import { streamMath } from "@/lib/stream-math";
 import {
   formatUsdc,
   rateToDaily,
   rateToMonthly,
   shortenAddress,
+  streamExplorerUrl,
   formatTimestamp,
   cn,
 } from "@/lib/utils";
@@ -169,9 +172,16 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
   const patternId = stream.id.toString();
   // Cumulative total ever streamed — derived from the on-chain claim clock so it
   // never resets to 0 after a cash-out (unlike accrued-since-last-claim).
-  const { streamedSoFar, notStarted, phase, unclaimed } = streamMath(stream);
+  const { streamedSoFar, committed, remaining, notStarted, phase, unclaimed } = streamMath(stream);
   const awaitingClaim = phase === "awaiting_claim";
   const claimed = phase === "claimed";
+
+  // Planned length of the stream = full commitment / rate. Drives whether a
+  // monthly figure is meaningful: a one-day stream showing "$59.62/mo" invents a
+  // horizon that doesn't exist, so we only annualize once the commitment spans a
+  // month or more.
+  const plannedSeconds = stream.ratePerSecond > 0n ? committed / stream.ratePerSecond : 0n;
+  const showMonthly = plannedSeconds >= 2592000n; // 30 days
 
   async function copyId() {
     try {
@@ -339,27 +349,32 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
             </div>
           </div>
 
-          {/* Streamed so far */}
-          <div className="rounded-none border border-volt/15 bg-volt-wash px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-panel/45">
-              {notStarted
-                ? "Scheduled to stream"
-                : claimed
-                ? "Total streamed"
-                : "Streamed so far"}
-            </p>
-            <p className="mt-0.5 font-mono text-2xl font-semibold tracking-tight text-panel">
-              ${formatUsdc(streamedSoFar)}
-            </p>
+          {/* Streamed / Left */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-none border border-volt/15 bg-volt-wash px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-panel/45">
+                {notStarted ? "Scheduled to stream" : claimed ? "Total streamed" : "Streamed"}
+              </p>
+              <p className="mt-0.5 font-mono text-2xl font-semibold tracking-tight text-panel">
+                ${formatUsdc(streamedSoFar)}
+              </p>
+            </div>
+            <div className="rounded-none border border-panel/10 bg-panel/[0.02] px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-panel/45">Left</p>
+              <p className="mt-0.5 font-mono text-2xl font-semibold tracking-tight text-panel/70">
+                ${formatUsdc(remaining)}
+              </p>
+            </div>
           </div>
 
           {/* Terms */}
           <div className="mt-2 divide-y divide-panel/[0.08]">
             <Row label="Rate" mono>
-              ${rateToDaily(stream.ratePerSecond)}/day · ${rateToMonthly(stream.ratePerSecond)}/mo
+              ${rateToDaily(stream.ratePerSecond)}/day
+              {showMonthly && <> · ${rateToMonthly(stream.ratePerSecond)}/mo</>}
             </Row>
             <Row label="Deposited" mono>
-              ${formatUsdc(stream.deposit)}
+              ${formatUsdc(committed)}
             </Row>
             {(awaitingClaim || unclaimed > 0n) && (
               <Row label="Awaiting claim" mono>
@@ -387,6 +402,18 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
                 : "none yet"}
             </Row>
             <Row label="Receipt generated">{generatedAt}</Row>
+          </div>
+
+          <div className="mt-3 flex justify-center">
+            <a
+              href={streamExplorerUrl(PAYROLL_ADDRESS, stream.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-panel/40 transition-colors hover:text-panel/70"
+            >
+              <ExternalLink size={12} />
+              View on Arc explorer
+            </a>
           </div>
 
           <p className="mt-4 text-center text-[11px] text-panel/35">

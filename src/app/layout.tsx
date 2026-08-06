@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Providers } from "./providers";
+import { AmbientWave } from "@/components/motion/AmbientWave";
 import "./globals.css";
 
 const geist = Geist({
@@ -66,6 +67,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-screen bg-paper text-ink antialiased">
+        <AmbientWave />
         <Providers>{children}</Providers>
       </body>
     </html>

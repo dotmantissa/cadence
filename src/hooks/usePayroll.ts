@@ -27,7 +27,12 @@ export interface StreamMeta {
   ratePerSecond: bigint;
   startTime: bigint;
   lastClaimTime: bigint;
+  /** Remaining escrow balance — shrinks on withdraw, grows on top-up, 0 on cancel. */
   deposit: bigint;
+  /** STATIC original commitment: first deposit + all top-ups. Never shrinks on a claim. */
+  totalDeposited: bigint;
+  /** Cumulative USDC paid out to the payee (monotonic). */
+  withdrawn: bigint;
   active: boolean;
   invoiceRef: string;
 }
@@ -78,10 +83,12 @@ export function useStreamsMeta(ids: readonly bigint[] | undefined) {
         const key = id.toString();
         const res = data[i];
         if (res && res.status === "success" && res.result) {
-          const [employer, employee, ratePerSecond, startTime, lastClaimTime, deposit, active, invoiceRef] =
+          const [employer, employee, ratePerSecond, startTime, lastClaimTime, deposit, totalDeposited, withdrawn, active, invoiceRef] =
             res.result as unknown as [
               `0x${string}`,
               `0x${string}`,
+              bigint,
+              bigint,
               bigint,
               bigint,
               bigint,
@@ -97,6 +104,8 @@ export function useStreamsMeta(ids: readonly bigint[] | undefined) {
             startTime,
             lastClaimTime,
             deposit,
+            totalDeposited,
+            withdrawn,
             active,
             invoiceRef,
           };

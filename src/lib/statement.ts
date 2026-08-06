@@ -87,7 +87,7 @@ function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
   //    slight rotation. Faint volt lines echo the receipt's <pattern id="wave">.
   doc.saveGraphicsState();
   // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.05 }));
+  doc.setGState(new doc.GState({ opacity: 0.025 }));
   doc.setDrawColor(...VOLT);
   doc.setLineWidth(0.6);
   doc.setLineCap("round");
@@ -127,7 +127,7 @@ function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
   //    matching the receipt's <pattern id="mark">.
   doc.saveGraphicsState();
   // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.035 }));
+  doc.setGState(new doc.GState({ opacity: 0.018 }));
   doc.setTextColor(...INK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
@@ -141,7 +141,7 @@ function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
   // 3) Oversized ghost mark bleeding off the top-right corner, like the receipt.
   doc.saveGraphicsState();
   // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.05 }));
+  doc.setGState(new doc.GState({ opacity: 0.03 }));
   drawMark(doc, pageW - 96, -40, 150, true);
   doc.restoreGraphicsState();
 }
@@ -190,7 +190,7 @@ export function generateStatementPdf(opts: StatementOptions): void {
   const isScheduled = (s: (typeof streams)[number]) => s.active && s.startTime > nowSec;
   const scheduled = streams.filter(isScheduled).length;
   const active = streams.filter((s) => s.active && !isScheduled(s)).length;
-  const totalDeposited = streams.reduce((a, s) => a + s.deposit, 0n);
+  const totalDeposited = streams.reduce((a, s) => a + s.totalDeposited, 0n);
   const totalStreamed = streams.reduce((a, s) => a + streamedToDate(s), 0n);
   const opened = streams.map((s) => s.startTime).filter((t) => t > 0n);
   const firstOpened = opened.length ? opened.reduce((a, b) => (a < b ? a : b)) : 0n;
@@ -260,7 +260,7 @@ export function generateStatementPdf(opts: StatementOptions): void {
     fmtDate(s.startTime),
     counterpartyLabel(s, perspective, identities),
     s.invoiceRef || "—",
-    `$${formatUsdc(s.deposit)}`,
+    `$${formatUsdc(s.totalDeposited)}`,
     `$${formatUsdc(streamedToDate(s))}`,
     statusLabel(s),
   ]);

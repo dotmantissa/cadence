@@ -1,4 +1,5 @@
 import { defineChain } from "viem";
+import { browserSafeRpcHttp } from "./rpc-endpoints";
 
 export const arcTestnet = defineChain({
   id: 5042002,
@@ -9,32 +10,20 @@ export const arcTestnet = defineChain({
     decimals: 18,
   },
   rpcUrls: {
-    // Browser-facing endpoints MUST answer the CORS preflight, or every viem read
-    // (application/json POST) is blocked and the UI flickers empty on each poll.
-    //
-    // Circle's "primary" host rpc.testnet.arc.io returns 400 with NO
-    // Access-Control-Allow-* headers on OPTIONS, so it is unusable from the browser
-    // even though server-side curl to it returns 200 (which masked this in probes).
-    // The three docs-listed provider mirrors below all pass preflight
-    // (blockdaemon: `*`; drpc/quicknode: echo Origin). Order is by measured
-    // robustness under sustained multi-hook polling: blockdaemon and drpc never
-    // rate-limit; quicknode is fastest but is the ONLY one that returns HTTP 429
-    // under bursts, so it sits last as a fast-path fallback rather than primary.
-    // See docs.arc.io/arc/references/rpc-endpoints.
+    // The browser talks only to same-origin `/api/rpc` (which proxies to Circle's
+    // primary + mirrors server-side), so no third-party domain appears in the
+    // browser's request log for an extension to block and no CORS preflight runs.
+    // Server-side (SSR) talks direct to the upstreams — faster, and nothing blocks.
+    // Privy's embedded wallet client reads `.default.http[0]` for its own signer
+    // transport, so this same-origin path covers both our public reads and embedded
+    // writes. External wallets (MetaMask, Coinbase, etc.) are untouched — their
+    // write path uses their own EIP-1193 provider and their own RPC setting.
     default: {
-      http: [
-        "https://rpc.blockdaemon.testnet.arc.io",
-        "https://rpc.drpc.testnet.arc.io",
-        "https://rpc.quicknode.testnet.arc.io",
-      ],
+      http: browserSafeRpcHttp(),
       webSocket: ["wss://rpc.drpc.testnet.arc.io"],
     },
     public: {
-      http: [
-        "https://rpc.blockdaemon.testnet.arc.io",
-        "https://rpc.drpc.testnet.arc.io",
-        "https://rpc.quicknode.testnet.arc.io",
-      ],
+      http: browserSafeRpcHttp(),
       webSocket: ["wss://rpc.drpc.testnet.arc.io"],
     },
   },

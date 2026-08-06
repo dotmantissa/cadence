@@ -11,12 +11,14 @@ import { arcTestnet } from "./chains";
 export const wagmiConfig = createConfig({
   chains: [arcTestnet],
   transports: {
-    // A CORS-friendly fallback across all three docs-listed .io providers: if the
-    // first briefly errors/rate-limits, viem transparently retries the next rather
-    // than surfacing a read failure (which would collapse the stream-id list to
-    // empty and unmount every card — the flicker loop). batch:true still collapses
-    // same-tick reads into one JSON-RPC batch routed through Multicall3, so a page
-    // of cards costs ~1-2 round trips, not one per read.
+    // Reads flow through whatever `arcTestnet.rpcUrls.default.http` resolves to:
+    // same-origin `/api/rpc` in the browser (so ad-blockers / privacy extensions
+    // have no third-party RPC host to block, and there's no CORS preflight), and
+    // the direct Arc upstreams during SSR. The proxy already fails over across
+    // Circle-primary + mirrors server-side, so a single browser transport is
+    // enough — but we keep the fallback wrapper so SSR (multiple upstreams) still
+    // retries. batch:true collapses same-tick reads into one JSON-RPC batch routed
+    // through Multicall3, so a page of cards costs ~1-2 round trips, not one per read.
     [arcTestnet.id]: fallback(
       arcTestnet.rpcUrls.default.http.map((url) => http(url, { batch: true })),
       { rank: false }

@@ -56,24 +56,22 @@ function drawMark(doc: jsPDF, x: number, y: number, size: number, ghost = false)
     doc.setFillColor(...INK);
     doc.roundedRect(x, y, size, size, size * 0.25, size * 0.25, "F");
   }
-  // Waveform path scaled from the 64x64 source viewBox into the tile.
+  // Waveform as smooth cubic béziers, scaled from the 64x64 source viewBox —
+  // the exact path the brand SVG and receipt use, so the curve is rounded at
+  // every crest instead of the sharp polyline the old segment loop produced.
+  // SVG: M13 39 C19 39 19 25 25 25 C31 25 31 39 37 39 C43 39 43 25 51 25
   const s = size / 64;
-  const pts: [number, number][] = [
-    [13, 39],
-    [19, 39],
-    [25, 25],
-    [31, 25],
-    [37, 39],
-    [43, 39],
-    [51, 25],
-  ];
   doc.setDrawColor(...VOLT);
   doc.setLineWidth(size * 0.07);
   doc.setLineCap("round");
   doc.setLineJoin("round");
-  for (let i = 0; i < pts.length - 1; i++) {
-    doc.line(x + pts[i][0] * s, y + pts[i][1] * s, x + pts[i + 1][0] * s, y + pts[i + 1][1] * s);
-  }
+  // Each entry is a relative cubic: [c1x, c1y, c2x, c2y, endx, endy].
+  const segs: number[][] = [
+    [6, 0, 6, -14, 12, -14],
+    [6, 0, 6, 14, 12, 14],
+    [6, 0, 6, -14, 14, -14],
+  ];
+  doc.lines(segs, x + 13 * s, y + 39 * s, [s, s], "S");
 }
 
 /**
@@ -87,38 +85,43 @@ function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
   //    slight rotation. Faint volt lines echo the receipt's <pattern id="wave">.
   doc.saveGraphicsState();
   // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.025 }));
+  doc.setGState(new doc.GState({ opacity: 0.014 }));
   doc.setDrawColor(...VOLT);
   doc.setLineWidth(0.6);
   doc.setLineCap("round");
   doc.setLineJoin("round");
   const tileW = 120;
-  const wave: [number, number][] = [
-    [0, 20],
-    [15, 20],
-    [30, 6],
-    [45, 6],
-    [60, 20],
-    [75, 20],
-    [90, 6],
-    [105, 6],
-    [120, 20],
-  ];
+  // Smooth waveform, one tile, as relative cubic béziers — the same crest curve
+  // as the receipt's <path d="M0 20C15 20 15 6 30 6…">, so the PDF wave is
+  // rounded instead of the old sharp polyline. Rotated by hand to keep the
+  // -8° drift while still using doc.lines() for the curve rendering.
   const rad = (-8 * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
+  const rot = (px: number, py: number): [number, number] => [
+    px * cos - py * sin,
+    px * sin + py * cos,
+  ];
+  // Relative cubic segments of the tile wave, pre-rotation (dx,dy pairs).
+  const waveSegs: number[][] = [
+    [15, 0, 15, -14, 30, -14],
+    [15, 0, 15, 14, 30, 14],
+    [15, 0, 15, -14, 30, -14],
+    [15, 0, 15, 14, 30, 14],
+  ];
+  // Rotate each relative control vector into the drifted frame.
+  const rotatedSegs = waveSegs.map((seg) => {
+    const out: number[] = [];
+    for (let i = 0; i < seg.length; i += 2) {
+      const [rx, ry] = rot(seg[i], seg[i + 1]);
+      out.push(rx, ry);
+    }
+    return out;
+  });
   for (let row = -60; row < pageH + 60; row += 26) {
     for (let col = -tileW; col < pageW + tileW; col += tileW) {
-      for (let i = 0; i < wave.length - 1; i++) {
-        const rot = (px: number, py: number): [number, number] => {
-          const x = col + px;
-          const y = row + py;
-          return [x * cos - y * sin, x * sin + y * cos];
-        };
-        const [x1, y1] = rot(wave[i][0], wave[i][1]);
-        const [x2, y2] = rot(wave[i + 1][0], wave[i + 1][1]);
-        doc.line(x1, y1, x2, y2);
-      }
+      const [sx, sy] = rot(col + 0, row + 20);
+      doc.lines(rotatedSegs, sx, sy, [1, 1], "S");
     }
   }
   doc.restoreGraphicsState();
@@ -127,7 +130,7 @@ function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
   //    matching the receipt's <pattern id="mark">.
   doc.saveGraphicsState();
   // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.018 }));
+  doc.setGState(new doc.GState({ opacity: 0.010 }));
   doc.setTextColor(...INK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
@@ -141,7 +144,7 @@ function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
   // 3) Oversized ghost mark bleeding off the top-right corner, like the receipt.
   doc.saveGraphicsState();
   // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.03 }));
+  doc.setGState(new doc.GState({ opacity: 0.018 }));
   drawMark(doc, pageW - 96, -40, 150, true);
   doc.restoreGraphicsState();
 }

@@ -9,6 +9,7 @@ import { useApi } from "@/hooks/useApi";
 import { validateUsername } from "@/lib/username";
 import { AtSign, Wallet, Check, Loader2, X, Clock, CalendarClock } from "lucide-react";
 import { Modal } from "./Modal";
+import { isAddress } from "viem";
 
 interface Props {
   onClose: () => void;
@@ -44,6 +45,12 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const [resolveError, setResolveError] = useState<string | null>(null);
   const resolveSeq = useRef(0);
 
+  // Address validation + registered-user check. Only used in address mode.
+  const [addressRegistered, setAddressRegistered] = useState(false);
+  const [checkingAddress, setCheckingAddress] = useState(false);
+  const [addressError, setAddressError] = useState<string | null>(null);
+  const addressSeq = useRef(0);
+
   const { data: balance } = useUsdcBalance(address);
   const { data: allowance } = useUsdcAllowance(address);
   const { approve } = useApproveUsdc();
@@ -73,11 +80,11 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const trimmed = employee.trim();
   const isRawAddress = trimmed.startsWith("0x") && trimmed.length === 42;
 
-  // The wallet we'll actually stream to: the typed address in address mode, or
-  // the resolved handle's wallet in username mode.
+  // The wallet we'll actually stream to: the typed address in address mode (only
+  // when valid AND registered), or the resolved handle's wallet in username mode.
   const recipient: `0x${string}` | null =
     mode === "address"
-      ? isRawAddress
+      ? isRawAddress && isAddress(trimmed) && addressRegistered
         ? (trimmed as `0x${string}`)
         : null
       : resolved?.walletAddress ?? null;
@@ -112,6 +119,42 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         setResolveError(e instanceof Error ? e.message : "could not find that handle");
       } finally {
         if (seq === resolveSeq.current) setResolving(false);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee, mode]);
+
+  // Debounced address validation + registered-user check.
+  useEffect(() => {
+    if (mode !== "address") return;
+    setAddressRegistered(false);
+    setAddressError(null);
+    if (trimmed === "") return;
+    if (!isAddress(trimmed)) {
+      setAddressError("Not a valid wallet address");
+      return;
+    }
+    setCheckingAddress(true);
+    const seq = ++addressSeq.current;
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.resolveAddresses([trimmed]);
+        if (seq !== addressSeq.current) return;
+        const identity = res.identities[trimmed.toLowerCase()];
+        if (!identity) {
+          setAddressError("This address isn't signed up on Cadence yet");
+          setAddressRegistered(false);
+        } else {
+          setAddressRegistered(true);
+          setAddressError(null);
+        }
+      } catch (e) {
+        if (seq !== addressSeq.current) return;
+        setAddressError(e instanceof Error ? e.message : "Could not verify address");
+        setAddressRegistered(false);
+      } finally {
+        if (seq === addressSeq.current) setCheckingAddress(false);
       }
     }, 400);
     return () => clearTimeout(t);
@@ -195,14 +238,33 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
           </div>
 
           {mode === "address" ? (
-            <input
-              type="text"
-              value={employee}
-              onChange={(e) => setEmployee(e.target.value)}
-              placeholder="0x wallet address"
-              className={cn(field, "font-mono")}
-              required
-            />
+            <>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={employee}
+                  onChange={(e) => setEmployee(e.target.value)}
+                  placeholder="0x wallet address"
+                  className={cn(field, "font-mono pr-9")}
+                  required
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                  {checkingAddress && <Loader2 size={15} className="animate-spin text-ink/40" />}
+                  {!checkingAddress && addressRegistered && <Check size={15} className="text-emerald-500" />}
+                  {!checkingAddress && addressError && trimmed !== "" && (
+                    <X size={15} className="text-red-500" />
+                  )}
+                </span>
+              </div>
+              <div className="mt-1.5 min-h-[1rem] text-xs">
+                {addressRegistered && (
+                  <span className="text-ink/55">Registered Cadence user</span>
+                )}
+                {!addressRegistered && addressError && trimmed !== "" && (
+                  <span className="text-red-500">{addressError}</span>
+                )}
+              </div>
+            </>
           ) : (
             <>
               <div className="relative">

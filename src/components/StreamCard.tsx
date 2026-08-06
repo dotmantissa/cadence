@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowUpRight, Plus, X, Radio, Clock } from "lucide-react";
+import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass } from "lucide-react";
 import type { StreamMeta } from "@/hooks/usePayroll";
 import { streamMath } from "@/lib/stream-math";
 import { StreamTicker } from "./StreamTicker";
@@ -24,9 +24,12 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
   // Accrued + runway are exact functions of the tuple we already have, so we
   // derive them locally instead of firing three more polling reads per card.
   const nowSec = Math.floor(Date.now() / 1000);
-  const { notStarted, flowing, unclaimed, streamedSoFar, runwaySeconds } = streamMath(stream, nowSec);
+  const { notStarted, flowing, streaming, phase, unclaimed, streamedSoFar, runwaySeconds } =
+    streamMath(stream, nowSec);
   const secondsUntilStart = Number(startTime) - nowSec;
-  const lowRunway = flowing && runwaySeconds < 86400;
+  const lowRunway = streaming && runwaySeconds < 86400;
+  const awaitingClaim = phase === "awaiting_claim";
+  const claimed = phase === "claimed";
 
   // Employee card shows what they can cash out (unclaimed); employer card shows
   // the cumulative total streamed. Both tick up at the same rate.
@@ -60,15 +63,25 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
                 <Clock size={11} className="text-volt-bright" />
                 scheduled
               </span>
-            ) : flowing ? (
+            ) : streaming ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-panel-foreground/80">
                 <Radio size={11} className="text-volt-bright" />
                 live
               </span>
+            ) : awaitingClaim ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-panel-foreground/80">
+                <Hourglass size={11} className="text-volt-bright" />
+                {perspective === "employee" ? "ready to claim" : "awaiting claim"}
+              </span>
+            ) : claimed ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-ink/10 bg-ink/[0.03] px-2.5 py-1 text-xs font-medium text-ink/55">
+                <CheckCircle2 size={11} className="text-volt" />
+                claimed
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-ink/10 bg-ink/[0.03] px-2.5 py-1 text-xs font-medium text-ink/50">
                 <span className="h-1.5 w-1.5 rounded-full bg-ink/30" />
-                ended
+                complete
               </span>
             )}
             <span className={cn("font-mono text-xs", active ? "text-panel-foreground/40" : "text-ink/40")}>
@@ -102,6 +115,12 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
         <p className={cn("text-xs uppercase tracking-widest", active ? "text-panel-foreground/40" : "text-ink/40")}>
           {notStarted
             ? "scheduled to stream"
+            : awaitingClaim
+            ? perspective === "employee"
+              ? "ready to withdraw"
+              : "final amount owed"
+            : claimed
+            ? "total streamed"
             : perspective === "employee"
             ? "ready to withdraw"
             : "streamed so far"}
@@ -110,7 +129,7 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
           <StreamTicker
             initialAccrued={tickerSeed}
             ratePerSecond={ratePerSecond}
-            active={flowing}
+            active={streaming}
             tone={active ? "ink" : "paper"}
           />
         </div>
@@ -123,13 +142,17 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
         )}
       >
         <span className={active ? "text-panel-foreground/50" : "text-ink/45"}>
-          {notStarted ? "begins in" : "runway"}
+          {notStarted ? "begins in" : awaitingClaim ? "status" : claimed ? "status" : "runway"}
         </span>
         <span
           className={cn(
             "font-mono",
             !active
-              ? "text-ink/40"
+              ? claimed
+                ? "text-volt"
+                : "text-ink/40"
+              : awaitingClaim
+              ? "text-volt-bright"
               : lowRunway
               ? "text-red-400"
               : "text-volt-bright"
@@ -137,9 +160,15 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
         >
           {notStarted
             ? formatRunway(Math.max(0, secondsUntilStart))
-            : flowing
+            : streaming
             ? formatRunway(runwaySeconds)
-            : "done"}
+            : awaitingClaim
+            ? perspective === "employee"
+              ? "ready to claim"
+              : "awaiting claim"
+            : claimed
+            ? "claimed"
+            : "complete"}
         </span>
       </div>
 

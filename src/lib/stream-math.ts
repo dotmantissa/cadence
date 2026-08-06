@@ -22,6 +22,24 @@ import type { StreamMeta } from "@/hooks/usePayroll";
  * and a withdrawal merely shifts value from the `unclaimed` term into the
  * `withdrawn` term — the sum is continuous across a cash-out.
  */
+/**
+ * The lifecycle stage of a stream, derived purely from the on-chain tuple.
+ *
+ * The contract only flips `active` to false on a withdrawal that drains the
+ * deposit (`deposit < rate`) or on cancel — NOT when a stream merely runs out of
+ * runway. So a stream whose deposit has been fully earned by elapsed time, but
+ * whose payee hasn't taken the final chunk, is still `active` on-chain. That's
+ * the "awaiting_claim" stage: money is done streaming, but the last withdrawal
+ * hasn't happened. We surface it explicitly so the UI stops ticking and shows
+ * "complete / awaiting claim" instead of animating past the real cap.
+ */
+export type StreamPhase =
+  | "scheduled" // active, start still in the future
+  | "live" // active, accruing, deposit not yet exhausted
+  | "awaiting_claim" // active but time-exhausted; final chunk not yet withdrawn
+  | "claimed" // settled: inactive after at least one withdrawal
+  | "ended"; // inactive with nothing ever withdrawn (e.g. cancelled early)
+
 export interface StreamMath {
   /** USDC (6dp) paid out to the employee to date. */
   withdrawn: bigint;
@@ -35,6 +53,10 @@ export interface StreamMath {
   notStarted: boolean;
   /** Active and already accruing (past its start). */
   flowing: boolean;
+  /** True only while money is genuinely still streaming (live, runway left). */
+  streaming: boolean;
+  /** Lifecycle stage — the single source of truth for status labels/animation. */
+  phase: StreamPhase;
 }
 
 export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now() / 1000)): StreamMath {
@@ -61,5 +83,36 @@ export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now()
   const remaining = s.deposit > unclaimed ? s.deposit - unclaimed : 0n;
   const runwaySeconds = flowing && rate > 0n ? Number(remaining / rate) : 0;
 
-  return { withdrawn, unclaimed, streamedSoFar, runwaySeconds, notStarted, flowing };
+  // A flowing stream is only genuinely *streaming* while it still has runway.
+  // Once elapsed time has earned the whole remaining deposit (accrual capped at
+  // deposit), the money has stopped moving even though the contract keeps it
+  // `active` until the final withdrawal — that's "awaiting claim", not "live".
+  const exhausted = flowing && rate > 0n && unclaimed >= s.deposit;
+  const streaming = flowing && !exhausted;
+
+  let phase: StreamPhase;
+  if (notStarted) {
+    phase = "scheduled";
+  } else if (streaming) {
+    phase = "live";
+  } else if (flowing) {
+    // active + past start + no runway left → done streaming, awaiting final claim
+    phase = "awaiting_claim";
+  } else if (withdrawn > 0n) {
+    // inactive and the payee has withdrawn at least once → fully settled
+    phase = "claimed";
+  } else {
+    phase = "ended";
+  }
+
+  return {
+    withdrawn,
+    unclaimed,
+    streamedSoFar,
+    runwaySeconds,
+    notStarted,
+    flowing,
+    streaming,
+    phase,
+  };
 }

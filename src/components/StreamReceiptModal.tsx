@@ -1,6 +1,17 @@
 "use client";
 
-import { Radio, ArrowRight, Copy, Check, Download, Share2, Loader2, Clock } from "lucide-react";
+import {
+  Radio,
+  ArrowRight,
+  Copy,
+  Check,
+  Download,
+  Share2,
+  Loader2,
+  Clock,
+  Hourglass,
+  CheckCircle2,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { Modal } from "./Modal";
@@ -158,7 +169,9 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
   const patternId = stream.id.toString();
   // Cumulative total ever streamed — derived from the on-chain claim clock so it
   // never resets to 0 after a cash-out (unlike accrued-since-last-claim).
-  const { streamedSoFar, notStarted } = streamMath(stream);
+  const { streamedSoFar, notStarted, phase, unclaimed } = streamMath(stream);
+  const awaitingClaim = phase === "awaiting_claim";
+  const claimed = phase === "claimed";
 
   async function copyId() {
     try {
@@ -271,13 +284,21 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
               <span className="inline-flex items-center gap-1.5 rounded-full border border-volt/20 bg-volt-wash px-2.5 py-1 text-xs font-medium text-volt">
                 <Clock size={11} /> Scheduled
               </span>
+            ) : awaitingClaim ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-volt/20 bg-volt-wash px-2.5 py-1 text-xs font-medium text-volt">
+                <Hourglass size={11} /> Awaiting claim
+              </span>
             ) : stream.active ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-volt/20 bg-volt-wash px-2.5 py-1 text-xs font-medium text-volt">
                 <Radio size={11} /> Live
               </span>
+            ) : claimed ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-volt/20 bg-volt-wash px-2.5 py-1 text-xs font-medium text-volt">
+                <CheckCircle2 size={11} /> Claimed
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-panel/10 bg-panel/[0.04] px-2.5 py-1 text-xs font-medium text-panel/50">
-                <span className="h-1.5 w-1.5 rounded-full bg-panel/30" /> Ended
+                <span className="h-1.5 w-1.5 rounded-full bg-panel/30" /> Complete
               </span>
             )}
           </div>
@@ -321,7 +342,11 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
           {/* Streamed so far */}
           <div className="rounded-none border border-volt/15 bg-volt-wash px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-panel/45">
-              {notStarted ? "Scheduled to stream" : "Streamed so far"}
+              {notStarted
+                ? "Scheduled to stream"
+                : claimed
+                ? "Total streamed"
+                : "Streamed so far"}
             </p>
             <p className="mt-0.5 font-mono text-2xl font-semibold tracking-tight text-panel">
               ${formatUsdc(streamedSoFar)}
@@ -335,6 +360,20 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
             </Row>
             <Row label="Deposited" mono>
               ${formatUsdc(stream.deposit)}
+            </Row>
+            {(awaitingClaim || unclaimed > 0n) && (
+              <Row label="Awaiting claim" mono>
+                ${formatUsdc(unclaimed)}
+              </Row>
+            )}
+            <Row label="Settlement">
+              {awaitingClaim
+                ? "Streaming complete · final claim pending"
+                : claimed
+                ? "Fully claimed by payee"
+                : stream.active
+                ? "In progress"
+                : "Closed"}
             </Row>
             <Row label="Counterparty" mono>
               {counterpartyName ? `@${counterpartyName} · ` : ""}

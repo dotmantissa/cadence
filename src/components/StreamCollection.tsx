@@ -7,8 +7,9 @@ import { StreamReceiptModal } from "./StreamReceiptModal";
 import { type StreamMeta } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
+import { streamMath } from "@/lib/stream-math";
 
-type Filter = "ongoing" | "scheduled" | "ended" | "all";
+type Filter = "ongoing" | "scheduled" | "complete" | "all";
 type Identity = { username: string | null; displayName: string | null };
 
 interface Props {
@@ -27,13 +28,20 @@ interface Props {
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "ongoing", label: "Ongoing" },
   { key: "scheduled", label: "Scheduled" },
-  { key: "ended", label: "Ended" },
+  { key: "complete", label: "Complete" },
   { key: "all", label: "All" },
 ];
 
-/** A stream is active on-chain but not yet flowing when its start is in the future. */
-function isScheduled(s: StreamMeta, nowSec: number): boolean {
-  return s.active && Number(s.startTime) > nowSec;
+/**
+ * Bucket a stream into exactly one filter tab from its lifecycle phase.
+ * "ongoing" now covers both genuinely-streaming and awaiting-claim streams
+ * (both are still on-chain `active`); "complete" is any settled/ended stream.
+ */
+function bucketOf(s: StreamMeta, nowSec: number): Exclude<Filter, "all"> {
+  const { phase } = streamMath(s, nowSec);
+  if (phase === "scheduled") return "scheduled";
+  if (phase === "claimed" || phase === "ended") return "complete";
+  return "ongoing"; // live or awaiting_claim
 }
 
 /** Local end-of-day epoch (ms) for an inclusive "to" date bound. */
@@ -105,13 +113,14 @@ export function StreamCollection({
     const nowSec = Math.floor(Date.now() / 1000);
     let ongoing = 0;
     let scheduled = 0;
-    let ended = 0;
+    let complete = 0;
     for (const s of streams) {
-      if (!s.active) ended++;
-      else if (Number(s.startTime) > nowSec) scheduled++;
+      const bucket = bucketOf(s, nowSec);
+      if (bucket === "scheduled") scheduled++;
+      else if (bucket === "complete") complete++;
       else ongoing++;
     }
-    return { ongoing, scheduled, ended, all: streams.length };
+    return { ongoing, scheduled, complete, all: streams.length };
   }, [streams]);
 
   const hasDateFilter = fromDate !== "" || toDate !== "";
@@ -124,11 +133,8 @@ export function StreamCollection({
     const nowSec = Math.floor(Date.now() / 1000);
 
     return streams.filter((s) => {
-      const scheduled = isScheduled(s, nowSec);
-      // "ongoing" = active and already flowing; "scheduled" = active but future.
-      if (filter === "ongoing" && (!s.active || scheduled)) return false;
-      if (filter === "scheduled" && !scheduled) return false;
-      if (filter === "ended" && s.active) return false;
+      // Lifecycle bucket is the single source of truth for the tab filters.
+      if (filter !== "all" && bucketOf(s, nowSec) !== filter) return false;
 
       // Date range on the opened-at time.
       if (from !== null || to !== null) {
@@ -318,8 +324,8 @@ export function StreamCollection({
           <p className="text-ink/55">
             {query || hasDateFilter
               ? "No streams match those filters."
-              : filter === "ended"
-              ? "No ended streams yet."
+              : filter === "complete"
+              ? "No completed streams yet."
               : filter === "scheduled"
               ? "No scheduled streams right now."
               : "No ongoing streams right now."}

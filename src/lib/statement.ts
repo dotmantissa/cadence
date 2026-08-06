@@ -51,9 +51,11 @@ function counterpartyLabel(
  * Draw the Cadence brand mark (rounded ink tile + volt waveform) at (x, y).
  * Vector, so it stays crisp at any zoom.
  */
-function drawMark(doc: jsPDF, x: number, y: number, size: number) {
-  doc.setFillColor(...INK);
-  doc.roundedRect(x, y, size, size, size * 0.25, size * 0.25, "F");
+function drawMark(doc: jsPDF, x: number, y: number, size: number, ghost = false) {
+  if (!ghost) {
+    doc.setFillColor(...INK);
+    doc.roundedRect(x, y, size, size, size * 0.25, size * 0.25, "F");
+  }
   // Waveform path scaled from the 64x64 source viewBox into the tile.
   const s = size / 64;
   const pts: [number, number][] = [
@@ -75,6 +77,76 @@ function drawMark(doc: jsPDF, x: number, y: number, size: number) {
 }
 
 /**
+ * Anti-tamper backdrop mirroring the on-screen receipt: a faint tiled diagonal
+ * "CADENCE · CADENCE" wordmark, a repeating waveform guilloche, and an oversized
+ * ghost brand mark bleeding off the top-right corner. Drawn first so all content
+ * sits above it, exactly like the receipt's <AntiTamperBackdrop>.
+ */
+function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
+  // 1) Waveform guilloche — repeating brand wave, tiled across the page on a
+  //    slight rotation. Faint volt lines echo the receipt's <pattern id="wave">.
+  doc.saveGraphicsState();
+  // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
+  doc.setGState(new doc.GState({ opacity: 0.05 }));
+  doc.setDrawColor(...VOLT);
+  doc.setLineWidth(0.6);
+  doc.setLineCap("round");
+  doc.setLineJoin("round");
+  const tileW = 120;
+  const wave: [number, number][] = [
+    [0, 20],
+    [15, 20],
+    [30, 6],
+    [45, 6],
+    [60, 20],
+    [75, 20],
+    [90, 6],
+    [105, 6],
+    [120, 20],
+  ];
+  const rad = (-8 * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  for (let row = -60; row < pageH + 60; row += 26) {
+    for (let col = -tileW; col < pageW + tileW; col += tileW) {
+      for (let i = 0; i < wave.length - 1; i++) {
+        const rot = (px: number, py: number): [number, number] => {
+          const x = col + px;
+          const y = row + py;
+          return [x * cos - y * sin, x * sin + y * cos];
+        };
+        const [x1, y1] = rot(wave[i][0], wave[i][1]);
+        const [x2, y2] = rot(wave[i + 1][0], wave[i + 1][1]);
+        doc.line(x1, y1, x2, y2);
+      }
+    }
+  }
+  doc.restoreGraphicsState();
+
+  // 2) Diagonal tiled wordmark — very low opacity ink "CADENCE · CADENCE",
+  //    matching the receipt's <pattern id="mark">.
+  doc.saveGraphicsState();
+  // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
+  doc.setGState(new doc.GState({ opacity: 0.035 }));
+  doc.setTextColor(...INK);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  for (let row = 40; row < pageH + 120; row += 115) {
+    for (let col = -120; col < pageW + 120; col += 300) {
+      doc.text("CADENCE · CADENCE", col, row, { angle: 24, charSpace: 3 });
+    }
+  }
+  doc.restoreGraphicsState();
+
+  // 3) Oversized ghost mark bleeding off the top-right corner, like the receipt.
+  doc.saveGraphicsState();
+  // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
+  doc.setGState(new doc.GState({ opacity: 0.05 }));
+  drawMark(doc, pageW - 96, -40, 150, true);
+  doc.restoreGraphicsState();
+}
+
+/**
  * Build an on-brand account statement PDF summarising every stream on this
  * account, and trigger a download. All figures are USDC and derive from the
  * on-chain stream structs (no fragile log queries): deposited, streamed-so-far
@@ -84,13 +156,11 @@ export function generateStatementPdf(opts: StatementOptions): void {
   const { account, perspective, streams, identities } = opts;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const margin = 40;
 
-  // Faint page-wide watermark, drawn first so everything sits over it.
-  doc.setTextColor(235, 234, 230);
-  doc.setFontSize(64);
-  doc.setFont("helvetica", "bold");
-  doc.text("CADENCE", pageW / 2, 420, { align: "center", angle: 32 });
+  // Brand security backdrop, matching the on-screen receipt graphics.
+  drawBackdrop(doc, pageW, pageH);
 
   // ---- Header band ----
   drawMark(doc, margin, 36, 30);
@@ -171,6 +241,20 @@ export function generateStatementPdf(opts: StatementOptions): void {
 
   // ---- Transactions table ----
   const cpHeader = perspective === "employer" ? "Paid to" : "Paid by";
+  const statusLabel = (s: StreamMeta): string => {
+    switch (streamMath(s).phase) {
+      case "scheduled":
+        return "Scheduled";
+      case "live":
+        return "Ongoing";
+      case "awaiting_claim":
+        return "Awaiting claim";
+      case "claimed":
+        return "Claimed";
+      default:
+        return "Complete";
+    }
+  };
   const body = streams.map((s) => [
     `#${s.id.toString()}`,
     fmtDate(s.startTime),
@@ -178,7 +262,7 @@ export function generateStatementPdf(opts: StatementOptions): void {
     s.invoiceRef || "—",
     `$${formatUsdc(s.deposit)}`,
     `$${formatUsdc(streamedToDate(s))}`,
-    isScheduled(s) ? "Scheduled" : s.active ? "Ongoing" : "Ended",
+    statusLabel(s),
   ]);
 
   autoTable(doc, {
@@ -211,8 +295,8 @@ export function generateStatementPdf(opts: StatementOptions): void {
     // Color the status cell without a plugin: volt for live/scheduled, muted for ended.
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 6) {
-        const ended = data.cell.raw === "Ended";
-        data.cell.styles.textColor = ended ? MUTE : VOLT;
+        const muted = data.cell.raw === "Complete";
+        data.cell.styles.textColor = muted ? MUTE : VOLT;
         data.cell.styles.fontStyle = "bold";
       }
     },

@@ -76,6 +76,22 @@ export function useApi() {
         body: JSON.stringify({ addresses }),
       }),
 
+    /**
+     * Ask the server to drip Arc testnet USDC to `address`. Resolves to one of:
+     * `{ dripped }` (funded server-side), `{ rateLimited }` (funded recently),
+     * or `{ fallback }` (client should open the public faucet).
+     */
+    faucet: (address: string) =>
+      request<{
+        dripped?: boolean;
+        rateLimited?: boolean;
+        fallback?: boolean;
+        reason?: string;
+      }>("/api/faucet", {
+        method: "POST",
+        body: JSON.stringify({ address }),
+      }),
+
     listPayees: () => request<{ payees: Payee[] }>("/api/payees"),
     addPayee: (input: {
       label: string;

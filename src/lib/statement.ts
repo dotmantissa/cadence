@@ -10,6 +10,21 @@ const VOLT: [number, number, number] = [43, 68, 231]; // #2b44e7
 const PAPER: [number, number, number] = [247, 246, 242]; // #f7f6f2
 const MUTE: [number, number, number] = [120, 118, 122];
 
+/**
+ * Watermark colors with the receipt's exact alpha baked straight into the RGB,
+ * blended over PAPER. We do NOT use jsPDF's GState opacity: the browser build
+ * silently ignores the alpha and renders the backdrop at full strength, which is
+ * what made a nominal "1%" watermark collide with the statement text. Baking the
+ * blend into an opaque near-paper color makes the faintness deterministic — it
+ * can never render darker than intended, regardless of GState support.
+ *
+ * blend(channel) = PAPER + (color − PAPER) · alpha, matching the on-screen
+ * <AntiTamperBackdrop>: waveform volt @0.06, wordmark ink @0.035, ghost @0.05.
+ */
+const WAVE_STROKE: [number, number, number] = [235, 235, 241]; // VOLT @ 0.06 over paper
+const WORDMARK_FILL: [number, number, number] = [239, 238, 234]; // INK @ 0.035 over paper
+const GHOST_STROKE: [number, number, number] = [237, 237, 241]; // VOLT @ 0.05 over paper
+
 export interface StatementOptions {
   /** The account holder's wallet address. */
   account: `0x${string}`;
@@ -49,9 +64,18 @@ function counterpartyLabel(
 
 /**
  * Draw the Cadence brand mark (rounded ink tile + volt waveform) at (x, y).
- * Vector, so it stays crisp at any zoom.
+ * Vector, so it stays crisp at any zoom. `ghost` skips the ink tile (waveform
+ * only); `strokeColor` overrides the waveform color so the backdrop's ghost mark
+ * can render in a pre-blended faint tone instead of full-strength volt.
  */
-function drawMark(doc: jsPDF, x: number, y: number, size: number, ghost = false) {
+function drawMark(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  size: number,
+  ghost = false,
+  strokeColor: [number, number, number] = VOLT
+) {
   if (!ghost) {
     doc.setFillColor(...INK);
     doc.roundedRect(x, y, size, size, size * 0.25, size * 0.25, "F");
@@ -61,7 +85,7 @@ function drawMark(doc: jsPDF, x: number, y: number, size: number, ghost = false)
   // every crest instead of the sharp polyline the old segment loop produced.
   // SVG: M13 39 C19 39 19 25 25 25 C31 25 31 39 37 39 C43 39 43 25 51 25
   const s = size / 64;
-  doc.setDrawColor(...VOLT);
+  doc.setDrawColor(...strokeColor);
   doc.setLineWidth(size * 0.07);
   doc.setLineCap("round");
   doc.setLineJoin("round");
@@ -75,26 +99,26 @@ function drawMark(doc: jsPDF, x: number, y: number, size: number, ghost = false)
 }
 
 /**
- * Anti-tamper backdrop mirroring the on-screen receipt: a faint tiled diagonal
- * "CADENCE · CADENCE" wordmark, a repeating waveform guilloche, and an oversized
+ * Anti-tamper backdrop mirroring the on-screen receipt: a faint waveform
+ * guilloche, a diagonal tiled "CADENCE · CADENCE" wordmark, and an oversized
  * ghost brand mark bleeding off the top-right corner. Drawn first so all content
  * sits above it, exactly like the receipt's <AntiTamperBackdrop>.
+ *
+ * Faintness comes from pre-blended near-paper colors (see WAVE_STROKE etc.), NOT
+ * from GState opacity — the browser jsPDF build ignores the alpha and would
+ * otherwise render this at full strength, drowning the text.
  */
 function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
   // 1) Waveform guilloche — repeating brand wave, tiled across the page on a
-  //    slight rotation. Faint volt lines echo the receipt's <pattern id="wave">.
-  doc.saveGraphicsState();
-  // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.014 }));
-  doc.setDrawColor(...VOLT);
-  doc.setLineWidth(0.6);
+  //    slight rotation. Echoes the receipt's <pattern id="wave">.
+  doc.setDrawColor(...WAVE_STROKE);
+  doc.setLineWidth(0.8);
   doc.setLineCap("round");
   doc.setLineJoin("round");
   const tileW = 120;
   // Smooth waveform, one tile, as relative cubic béziers — the same crest curve
-  // as the receipt's <path d="M0 20C15 20 15 6 30 6…">, so the PDF wave is
-  // rounded instead of the old sharp polyline. Rotated by hand to keep the
-  // -8° drift while still using doc.lines() for the curve rendering.
+  // as the receipt's <path d="M0 20C15 20 15 6 30 6…">. Rotated by hand to keep
+  // the -8° drift while still using doc.lines() for the curve rendering.
   const rad = (-8 * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
@@ -124,29 +148,24 @@ function drawBackdrop(doc: jsPDF, pageW: number, pageH: number) {
       doc.lines(rotatedSegs, sx, sy, [1, 1], "S");
     }
   }
-  doc.restoreGraphicsState();
 
-  // 2) Diagonal tiled wordmark — very low opacity ink "CADENCE · CADENCE",
-  //    matching the receipt's <pattern id="mark">.
-  doc.saveGraphicsState();
-  // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.010 }));
-  doc.setTextColor(...INK);
+  // 2) Diagonal tiled wordmark — pre-blended faint ink "CADENCE · CADENCE",
+  //    matching the receipt's <pattern id="mark"> (staggered on alternate rows
+  //    so the tiling reads like the receipt's two-line pattern).
+  doc.setTextColor(...WORDMARK_FILL);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  for (let row = 40; row < pageH + 120; row += 115) {
-    for (let col = -120; col < pageW + 120; col += 300) {
-      doc.text("CADENCE · CADENCE", col, row, { angle: 24, charSpace: 3 });
+  doc.setFontSize(16);
+  let markRow = 0;
+  for (let row = 20; row < pageH + 150; row += 78) {
+    const stagger = markRow % 2 === 0 ? 0 : -140;
+    for (let col = -160; col < pageW + 160; col += 300) {
+      doc.text("CADENCE · CADENCE", col + stagger, row, { angle: 22, charSpace: 4 });
     }
+    markRow++;
   }
-  doc.restoreGraphicsState();
 
   // 3) Oversized ghost mark bleeding off the top-right corner, like the receipt.
-  doc.saveGraphicsState();
-  // @ts-expect-error jsPDF GState alpha is untyped but supported at runtime.
-  doc.setGState(new doc.GState({ opacity: 0.018 }));
-  drawMark(doc, pageW - 96, -40, 150, true);
-  doc.restoreGraphicsState();
+  drawMark(doc, pageW - 96, -40, 150, true, GHOST_STROKE);
 }
 
 /**
@@ -161,6 +180,11 @@ export function generateStatementPdf(opts: StatementOptions): void {
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 40;
+
+  // Warm paper base so the whole page matches the receipt card and the
+  // pre-blended watermark colors sit on their intended background.
+  doc.setFillColor(...PAPER);
+  doc.rect(0, 0, pageW, pageH, "F");
 
   // Brand security backdrop, matching the on-screen receipt graphics.
   drawBackdrop(doc, pageW, pageH);
@@ -245,7 +269,9 @@ export function generateStatementPdf(opts: StatementOptions): void {
   // ---- Transactions table ----
   const cpHeader = perspective === "employer" ? "Paid to" : "Paid by";
   const statusLabel = (s: StreamMeta): string => {
-    switch (streamMath(s).phase) {
+    const m = streamMath(s);
+    if (m.cancelled) return "Cancelled";
+    switch (m.phase) {
       case "scheduled":
         return "Scheduled";
       case "live":
@@ -272,14 +298,15 @@ export function generateStatementPdf(opts: StatementOptions): void {
     startY: y + 4,
     head: [["ID", "Opened", cpHeader, "Remark", "Deposited", "Streamed", "Status"]],
     body,
-    theme: "striped",
+    theme: "grid",
     styles: {
       font: "helvetica",
       fontSize: 8.5,
       cellPadding: 6,
       textColor: INK,
-      lineColor: [230, 229, 225],
+      lineColor: [226, 225, 220],
       lineWidth: 0.5,
+      fillColor: false, // transparent cells let the paper + watermark show through uniformly
     },
     headStyles: {
       fillColor: INK,
@@ -287,7 +314,6 @@ export function generateStatementPdf(opts: StatementOptions): void {
       fontStyle: "bold",
       fontSize: 8,
     },
-    alternateRowStyles: { fillColor: [246, 245, 241] },
     columnStyles: {
       0: { cellWidth: 34, font: "courier" },
       2: { font: "courier", fontSize: 7.5 },
@@ -295,12 +321,20 @@ export function generateStatementPdf(opts: StatementOptions): void {
       5: { halign: "right", font: "courier" },
       6: { halign: "center" },
     },
-    // Color the status cell without a plugin: volt for live/scheduled, muted for ended.
+    // Color the status cell: volt for active streams, muted for ended, red for cancelled.
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 6) {
-        const muted = data.cell.raw === "Complete";
-        data.cell.styles.textColor = muted ? MUTE : VOLT;
-        data.cell.styles.fontStyle = "bold";
+        const status = data.cell.raw as string;
+        if (status === "Cancelled") {
+          data.cell.styles.textColor = [220, 38, 38]; // red-600
+          data.cell.styles.fontStyle = "bold";
+        } else if (status === "Complete") {
+          data.cell.styles.textColor = MUTE;
+          data.cell.styles.fontStyle = "bold";
+        } else {
+          data.cell.styles.textColor = VOLT;
+          data.cell.styles.fontStyle = "bold";
+        }
       }
     },
     margin: { left: margin, right: margin },

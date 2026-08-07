@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, X, SlidersHorizontal, FileText, Loader2, Eye } from "lucide-react";
+import { Search, X, SlidersHorizontal, FileText } from "lucide-react";
 import { StreamCard } from "./StreamCard";
 import { StreamReceiptModal } from "./StreamReceiptModal";
-import { StatementPreviewModal } from "./StatementPreviewModal";
+import { StatementFilterModal } from "./StatementFilterModal";
 import { type StreamMeta } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
@@ -80,7 +80,6 @@ export function StreamCollection({
   const [toDate, setToDate] = useState("");
   const [receipt, setReceipt] = useState<StreamMeta | null>(null);
   const [identities, setIdentities] = useState<Record<string, Identity>>({});
-  const [statementBusy, setStatementBusy] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
 
   const counterpartyOf = (s: StreamMeta) =>
@@ -177,20 +176,6 @@ export function StreamCollection({
         : streams[0].employee
       : undefined;
 
-  async function downloadStatement() {
-    if (!account || visible.length === 0) return;
-    setStatementBusy(true);
-    try {
-      // Dynamic import keeps jspdf out of the initial page bundle.
-      const { generateStatementPdf } = await import("@/lib/statement");
-      generateStatementPdf({ account, perspective, streams: visible, identities });
-    } catch {
-      /* generation failed silently — the on-screen list is unaffected */
-    } finally {
-      setStatementBusy(false);
-    }
-  }
-
   return (
     <div className="mt-8">
       {/* Controls */}
@@ -255,29 +240,12 @@ export function StreamCollection({
           </button>
           <button
             onClick={() => setShowStatement(true)}
-            disabled={visible.length === 0}
-            className="inline-flex h-10 items-center gap-2 rounded-full border border-ink/10 bg-paper-warm px-4 text-sm font-medium text-ink/70 transition-colors hover:border-ink/25 hover:text-ink disabled:opacity-40"
-            title={
-              hasDateFilter || query
-                ? "Statement of the streams matching your current filters"
-                : "Statement of all your streams"
-            }
-          >
-            <Eye size={15} />
-            Statement
-          </button>
-          <button
-            onClick={downloadStatement}
-            disabled={statementBusy || visible.length === 0}
+            disabled={streams.length === 0}
             className="inline-flex h-10 items-center gap-2 rounded-full border border-volt/30 bg-volt-wash px-4 text-sm font-medium text-volt transition-colors hover:bg-volt/10 disabled:opacity-40"
-            title="Download statement as PDF"
+            title="Generate an account statement"
           >
-            {statementBusy ? (
-              <Loader2 size={15} className="animate-spin" />
-            ) : (
-              <FileText size={15} />
-            )}
-            PDF
+            <FileText size={15} />
+            Statement
           </button>
         </div>
       </div>
@@ -372,10 +340,10 @@ export function StreamCollection({
       )}
 
       {showStatement && account && (
-        <StatementPreviewModal
+        <StatementFilterModal
           account={account}
           perspective={perspective}
-          streams={visible}
+          streams={streams}
           identities={identities}
           onClose={() => setShowStatement(false)}
         />

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass, ExternalLink } from "lucide-react";
+import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass, XCircle, ExternalLink } from "lucide-react";
 import type { StreamMeta } from "@/hooks/usePayroll";
 import { streamMath } from "@/lib/stream-math";
 import { StreamTicker } from "./StreamTicker";
@@ -25,7 +25,7 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
   // Accrued + runway are exact functions of the tuple we already have, so we
   // derive them locally instead of firing three more polling reads per card.
   const nowSec = Math.floor(Date.now() / 1000);
-  const { notStarted, flowing, streaming, phase, unclaimed, streamedSoFar, remaining, committed, runwaySeconds } =
+  const { notStarted, flowing, streaming, phase, unclaimed, streamedSoFar, remaining, committed, runwaySeconds, cancelled } =
     streamMath(stream, nowSec);
   const secondsUntilStart = Number(startTime) - nowSec;
   const lowRunway = streaming && runwaySeconds < 86400;
@@ -37,9 +37,12 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
   const plannedSeconds = ratePerSecond > 0n ? committed / ratePerSecond : 0n;
   const showMonthly = plannedSeconds >= 2592000n; // 30 days
 
-  // Employee card shows what they can cash out (unclaimed); employer card shows
-  // the cumulative total streamed. Both tick up at the same rate.
-  const tickerSeed = perspective === "employee" ? unclaimed : streamedSoFar;
+  // Employee card shows what they can cash out (unclaimed) while the stream is
+  // still active; once it's settled (cancelled or fully claimed), show the total
+  // streamed amount instead. Employer card always shows cumulative total streamed.
+  const tickerSeed = perspective === "employee"
+    ? (active ? unclaimed : streamedSoFar)
+    : streamedSoFar;
 
   return (
     <motion.div
@@ -78,6 +81,11 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-panel-foreground/80">
                 <Hourglass size={11} className="text-volt-bright" />
                 {perspective === "employee" ? "ready to claim" : "awaiting claim"}
+              </span>
+            ) : cancelled ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/[0.06] px-2.5 py-1 text-xs font-medium text-red-500/90">
+                <XCircle size={11} className="text-red-500" />
+                cancelled
               </span>
             ) : claimed ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-ink/10 bg-ink/[0.03] px-2.5 py-1 text-xs font-medium text-ink/55">
@@ -127,7 +135,7 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
             ? perspective === "employee"
               ? "ready to withdraw"
               : "final amount owed"
-            : claimed
+            : claimed || cancelled
             ? "total streamed"
             : perspective === "employee"
             ? "ready to withdraw"
@@ -155,13 +163,15 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
         )}
       >
         <span className={active ? "text-panel-foreground/50" : "text-ink/45"}>
-          {notStarted ? "begins in" : awaitingClaim ? "status" : claimed ? "status" : "runway"}
+          {notStarted ? "begins in" : awaitingClaim || claimed || cancelled ? "status" : "runway"}
         </span>
         <span
           className={cn(
             "font-mono",
             !active
-              ? claimed
+              ? cancelled
+                ? "text-red-500/80"
+                : claimed
                 ? "text-volt"
                 : "text-ink/40"
               : awaitingClaim
@@ -179,6 +189,8 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
             ? perspective === "employee"
               ? "ready to claim"
               : "awaiting claim"
+            : cancelled
+            ? "cancelled"
             : claimed
             ? "claimed"
             : "complete"}

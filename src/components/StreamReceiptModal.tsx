@@ -11,6 +11,7 @@ import {
   Clock,
   Hourglass,
   CheckCircle2,
+  XCircle,
   ExternalLink,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -172,7 +173,7 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
   const patternId = stream.id.toString();
   // Cumulative total ever streamed — derived from the on-chain claim clock so it
   // never resets to 0 after a cash-out (unlike accrued-since-last-claim).
-  const { streamedSoFar, committed, remaining, notStarted, phase, unclaimed } = streamMath(stream);
+  const { streamedSoFar, committed, remaining, notStarted, phase, unclaimed, cancelled } = streamMath(stream);
   const awaitingClaim = phase === "awaiting_claim";
   const claimed = phase === "claimed";
 
@@ -302,6 +303,10 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
               <span className="inline-flex items-center gap-1.5 rounded-full border border-volt/20 bg-volt-wash px-2.5 py-1 text-xs font-medium text-volt">
                 <Radio size={11} /> Live
               </span>
+            ) : cancelled ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/[0.06] px-2.5 py-1 text-xs font-medium text-red-500">
+                <XCircle size={11} /> Cancelled
+              </span>
             ) : claimed ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-volt/20 bg-volt-wash px-2.5 py-1 text-xs font-medium text-volt">
                 <CheckCircle2 size={11} /> Claimed
@@ -353,7 +358,7 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-none border border-volt/15 bg-volt-wash px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-panel/45">
-                {notStarted ? "Scheduled to stream" : claimed ? "Total streamed" : "Streamed"}
+                {notStarted ? "Scheduled to stream" : claimed || cancelled ? "Total streamed" : "Streamed"}
               </p>
               <p className="mt-0.5 font-mono text-2xl font-semibold tracking-tight text-panel">
                 ${formatUsdc(streamedSoFar)}
@@ -382,7 +387,9 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
               </Row>
             )}
             <Row label="Settlement">
-              {awaitingClaim
+              {cancelled
+                ? "Cancelled by payer · remainder refunded"
+                : awaitingClaim
                 ? "Streaming complete · final claim pending"
                 : claimed
                 ? "Fully claimed by payee"

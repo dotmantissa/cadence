@@ -64,6 +64,8 @@ export interface StreamMath {
   streaming: boolean;
   /** Lifecycle stage — the single source of truth for status labels/animation. */
   phase: StreamPhase;
+  /** Inactive with deposit zeroed — payer cancelled and refunded the remainder. */
+  cancelled: boolean;
 }
 
 export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now() / 1000)): StreamMath {
@@ -86,7 +88,18 @@ export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now()
     unclaimed = raw > s.deposit ? s.deposit : raw;
   }
 
+  // Cumulative amount streamed. The contract adds the final accrued amount to
+  // `withdrawn` on cancel (line 234 of PayrollManager.sol), so this formula
+  // works correctly for both active and cancelled streams.
   const streamedSoFar = withdrawn + unclaimed;
+
+  // Detect cancellation vs natural completion. Both end inactive with the
+  // deposit drained to zero, so `deposit === 0` alone can't tell them apart.
+  // The discriminator: a cancel refunds the unearned remainder to the payer, so
+  // the cumulative `withdrawn` ends up STRICTLY LESS than the static
+  // `totalDeposited`. A stream that ran its full course has withdrawn every cent
+  // of totalDeposited, so withdrawn === totalDeposited there.
+  const cancelled = !s.active && s.deposit === 0n && withdrawn < s.totalDeposited;
 
   // The original commitment is static (never shrinks when the payee claims);
   // "Left" is simply what of it hasn't been streamed yet. Clamp both against
@@ -132,5 +145,6 @@ export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now()
     flowing,
     streaming,
     phase,
+    cancelled,
   };
 }

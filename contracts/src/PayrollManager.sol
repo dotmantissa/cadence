@@ -130,6 +130,62 @@ contract PayrollManager is ReentrancyGuard {
         streamId = _openStream(msg.sender, employee, ratePerSecond, deposit, invoiceRef, startAt);
     }
 
+    /// @notice Open many payroll streams in a single transaction. The caller is
+    ///         recorded as employer for every stream (so they can top up / cancel
+    ///         each one) and the whole batch's escrow is pulled in ONE
+    ///         `transferFrom`, so a payer signs and approves once for the lot.
+    ///
+    ///         This exists because a generic multicall can't be used here:
+    ///         `createStream` binds the employer and the funds source to
+    ///         `msg.sender`, which for an aggregator would be the aggregator
+    ///         itself. Batching must live in the contract to keep the payer as
+    ///         the caller.
+    /// @param employees      One recipient per stream.
+    /// @param ratesPerSecond USDC/sec for each stream (6 decimals).
+    /// @param deposits       Initial escrow for each stream.
+    /// @param invoiceRefs    Per-stream invoice/tax reference.
+    /// @param startAt        Shared start time for the whole batch (0 = now).
+    /// @dev All four arrays must be the same, non-zero length. Every entry is
+    ///      validated before any funds move, so a single bad row reverts the
+    ///      entire batch — callers never end up with a partially-created set.
+    function createStreams(
+        address[] calldata employees,
+        uint128[] calldata ratesPerSecond,
+        uint128[] calldata deposits,
+        string[] calldata invoiceRefs,
+        uint64 startAt
+    ) external nonReentrant returns (uint256[] memory streamIds) {
+        uint256 n = employees.length;
+        require(n > 0, "no streams");
+        require(
+            ratesPerSecond.length == n && deposits.length == n && invoiceRefs.length == n,
+            "length mismatch"
+        );
+
+        // Validate every row and total the escrow BEFORE moving any funds, so an
+        // invalid entry reverts the batch without a wasted transfer.
+        uint256 total;
+        for (uint256 i = 0; i < n; i++) {
+            _validateTerms(employees[i], ratesPerSecond[i], deposits[i]);
+            total += deposits[i];
+        }
+
+        // One transfer for the whole batch, then record each stream.
+        usdc.transferFrom(msg.sender, address(this), total);
+
+        streamIds = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            streamIds[i] = _openStream(
+                msg.sender,
+                employees[i],
+                ratesPerSecond[i],
+                deposits[i],
+                invoiceRefs[i],
+                startAt
+            );
+        }
+    }
+
     /// @dev Shared term checks for both direct streams and requests.
     function _validateTerms(address employee, uint128 ratePerSecond, uint128 deposit) internal pure {
         require(employee != address(0), "invalid employee");

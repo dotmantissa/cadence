@@ -81,7 +81,13 @@ export function StatementPreviewModal({
   const flowLabel = perspective === "employer" ? "Total paid out" : "Total received";
 
   function statusLabel(s: StreamMeta): string {
-    switch (streamMath(s).phase) {
+    const m = streamMath(s);
+    // Cancelled must be checked before the phase switch: a cancelled stream
+    // settles with phase "claimed" (the contract books its final accrued chunk
+    // into `withdrawn`), so switching on phase alone would mislabel it "Claimed".
+    // This mirrors the PDF generator's statusLabel exactly.
+    if (m.cancelled) return "Cancelled";
+    switch (m.phase) {
       case "scheduled":
         return "Scheduled";
       case "live":
@@ -186,7 +192,9 @@ export function StatementPreviewModal({
                   <td className="px-3 py-2.5 text-center">
                     <span
                       className={
-                        statusLabel(s) === "Complete"
+                        statusLabel(s) === "Cancelled"
+                          ? "font-medium text-red-500"
+                          : statusLabel(s) === "Complete"
                           ? "text-ink/50"
                           : "font-medium text-volt"
                       }

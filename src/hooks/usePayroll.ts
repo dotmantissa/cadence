@@ -194,12 +194,15 @@ export function useTopUp() {
 }
 
 export function useCancelStream() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   return {
+    // Async so the caller can freeze the card the instant the tx is submitted
+    // and refetch once it confirms, instead of the stream ticking on until the
+    // next background poll happens to catch the state change.
     cancel: (streamId: bigint) =>
-      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "cancelStream", args: [streamId], ...ARC_FEE }),
+      writeContractAsync({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "cancelStream", args: [streamId], ...ARC_FEE }),
     isPending,
     isConfirming,
     isSuccess,
@@ -269,14 +272,15 @@ export interface BatchStreamParams {
 export type BatchStreamProgress = "idle" | "pending" | "success" | "error";
 
 /**
- * Batch-create many streams after a single USDC approval of the total. The hook
- * sequences the tx calls one by one (approve, then each createStream), awaiting
- * each receipt before firing the next so nonces settle cleanly on the Privy
- * embedded wallet — which can flap if we fire too fast without tracking nonces.
+ * Batch-create many streams in a SINGLE createStreams transaction after one
+ * USDC approval of the total — the payer signs twice total (approve, then the
+ * batch), no matter how many recipients. The contract loops internally, so the
+ * payer stays msg.sender (and thus employer) for every stream; a generic
+ * multicall can't do this because it would become the caller itself.
  *
- * Progress is exposed per stream as an array that stays stable across re-renders.
- * On partial failure (one stream errors after others succeed), the hook stops and
- * returns those that made it, so the payer knows which recipients were funded.
+ * Because the batch is one atomic tx, it either opens every stream or none —
+ * there's no partial-success state to reconcile. Progress is still exposed as a
+ * per-recipient array (all flip together) so the existing batch UI is unchanged.
  */
 export function useBatchCreateStreams() {
   const config = useConfig();
@@ -291,8 +295,6 @@ export function useBatchCreateStreams() {
     setRunning(true);
     setError(null);
 
-    const succeeded: number[] = [];
-
     try {
       // 1. Approve the full total once.
       setProgress((prev) => prev.map(() => "pending"));
@@ -305,39 +307,35 @@ export function useBatchCreateStreams() {
       });
       await waitForTransactionReceipt(config, { hash: approveHash });
 
-      // 2. Create each stream sequentially, awaiting the receipt before the next.
-      for (let i = 0; i < streams.length; i++) {
-        const s = streams[i];
-        setProgress((prev) => prev.map((st, j) => (j === i ? "pending" : st)));
-        try {
-          const hash = await writeContractAsync({
-            address: PAYROLL_ADDRESS,
-            abi: PAYROLL_ABI,
-            functionName: "createStream",
-            args: [s.employee, s.ratePerSecond, s.deposit, s.invoiceRef, s.startAt],
-            ...ARC_FEE,
-          });
-          await waitForTransactionReceipt(config, { hash });
-          setProgress((prev) => prev.map((st, j) => (j === i ? "success" : st)));
-          succeeded.push(i);
-        } catch (err: unknown) {
-          const e = err as { shortMessage?: string; message?: string };
-          const msg = e?.shortMessage ?? e?.message ?? "tx rejected";
-          setProgress((prev) => prev.map((st, j) => (j === i ? "error" : st)));
-          setError(`Stream ${i + 1} failed: ${msg}`);
-          setRunning(false);
-          return { ok: false as const, error: msg, succeeded };
-        }
-      }
+      // 2. Open every stream in ONE transaction. All streams in a batch share
+      //    the same start time (set together in the modal), so we read it off
+      //    the first row.
+      const employees = streams.map((s) => s.employee);
+      const rates = streams.map((s) => s.ratePerSecond);
+      const deposits = streams.map((s) => s.deposit);
+      const refs = streams.map((s) => s.invoiceRef);
+      const startAt = streams[0].startAt;
 
+      const hash = await writeContractAsync({
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "createStreams",
+        args: [employees, rates, deposits, refs, startAt],
+        ...ARC_FEE,
+      });
+      await waitForTransactionReceipt(config, { hash });
+
+      setProgress((prev) => prev.map(() => "success"));
       setRunning(false);
-      return { ok: true as const, succeeded };
+      return { ok: true as const, succeeded: streams.map((_, i) => i) };
     } catch (err: unknown) {
       const e = err as { shortMessage?: string; message?: string };
-      const msg = e?.shortMessage ?? e?.message ?? "approval failed";
+      const msg = e?.shortMessage ?? e?.message ?? "batch failed";
+      // Atomic tx: if it reverts, nothing was created.
+      setProgress((prev) => prev.map(() => "error"));
       setError(msg);
       setRunning(false);
-      return { ok: false as const, error: msg, succeeded };
+      return { ok: false as const, error: msg, succeeded: [] as number[] };
     }
   };
 

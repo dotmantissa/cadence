@@ -26,6 +26,19 @@ export const PAYROLL_ABI = [
   },
   {
     type: "function",
+    name: "createStreams",
+    inputs: [
+      { name: "employees", type: "address[]", internalType: "address[]" },
+      { name: "ratesPerSecond", type: "uint128[]", internalType: "uint128[]" },
+      { name: "deposits", type: "uint128[]", internalType: "uint128[]" },
+      { name: "invoiceRefs", type: "string[]", internalType: "string[]" },
+      { name: "startAt", type: "uint64", internalType: "uint64" },
+    ],
+    outputs: [{ name: "streamIds", type: "uint256[]", internalType: "uint256[]" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "withdraw",
     inputs: [{ name: "streamId", type: "uint256", internalType: "uint256" }],
     outputs: [],

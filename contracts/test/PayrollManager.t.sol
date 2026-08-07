@@ -572,4 +572,131 @@ contract PayrollManagerTest is Test {
         // Employee got 150s total; employer refunded the rest of the original.
         assertEq(usdc.balanceOf(employee), 150e6);
     }
+
+    // ---- Batch creation -------------------------------------------------
+
+    function test_CreateStreams_OpensAllAndPullsOnce() public {
+        address alice = address(0xA);
+        address bob = address(0xB);
+        address carol = address(0xC);
+
+        address[] memory emps = new address[](3);
+        emps[0] = alice;
+        emps[1] = bob;
+        emps[2] = carol;
+
+        uint128[] memory rates = new uint128[](3);
+        rates[0] = RATE;
+        rates[1] = 2 * RATE;
+        rates[2] = 3 * RATE;
+
+        uint128[] memory deps = new uint128[](3);
+        deps[0] = 100e6;
+        deps[1] = 200e6;
+        deps[2] = 300e6;
+
+        string[] memory refs = new string[](3);
+        refs[0] = "A";
+        refs[1] = "B";
+        refs[2] = "C";
+
+        uint256 employerBefore = usdc.balanceOf(employer);
+
+        vm.prank(employer);
+        uint256[] memory ids = payroll.createStreams(emps, rates, deps, refs, 0);
+
+        assertEq(ids.length, 3);
+
+        // Each stream is recorded with the CALLER as employer (not an aggregator).
+        for (uint256 i = 0; i < 3; i++) {
+            (address emp, address rcv, uint128 rate, , , , uint128 total, , bool active,) =
+                payroll.streams(ids[i]);
+            assertEq(emp, employer);
+            assertEq(rcv, emps[i]);
+            assertEq(rate, rates[i]);
+            assertEq(total, deps[i]);
+            assertTrue(active);
+        }
+
+        // Exactly the summed escrow moved, in one shot.
+        assertEq(usdc.balanceOf(address(payroll)), 600e6);
+        assertEq(employerBefore - usdc.balanceOf(employer), 600e6);
+
+        // Streams are indexed under the employer.
+        assertEq(payroll.getEmployerStreams(employer).length, 3);
+    }
+
+    function test_CreateStreams_RevertsAtomicallyOnBadRow() public {
+        address[] memory emps = new address[](2);
+        emps[0] = address(0xA);
+        emps[1] = address(0); // invalid → whole batch must revert
+
+        uint128[] memory rates = new uint128[](2);
+        rates[0] = RATE;
+        rates[1] = RATE;
+
+        uint128[] memory deps = new uint128[](2);
+        deps[0] = 100e6;
+        deps[1] = 100e6;
+
+        string[] memory refs = new string[](2);
+        refs[0] = "A";
+        refs[1] = "B";
+
+        vm.prank(employer);
+        vm.expectRevert("invalid employee");
+        payroll.createStreams(emps, rates, deps, refs, 0);
+
+        // Nothing was created and no funds moved.
+        assertEq(payroll.getEmployerStreams(employer).length, 0);
+        assertEq(usdc.balanceOf(address(payroll)), 0);
+    }
+
+    function test_CreateStreams_RevertsOnLengthMismatch() public {
+        address[] memory emps = new address[](2);
+        emps[0] = address(0xA);
+        emps[1] = address(0xB);
+
+        uint128[] memory rates = new uint128[](1); // wrong length
+        rates[0] = RATE;
+
+        uint128[] memory deps = new uint128[](2);
+        deps[0] = 100e6;
+        deps[1] = 100e6;
+
+        string[] memory refs = new string[](2);
+        refs[0] = "A";
+        refs[1] = "B";
+
+        vm.prank(employer);
+        vm.expectRevert("length mismatch");
+        payroll.createStreams(emps, rates, deps, refs, 0);
+    }
+
+    function test_CreateStreams_SharedStartAtSchedulesAll() public {
+        address[] memory emps = new address[](2);
+        emps[0] = address(0xA);
+        emps[1] = address(0xB);
+
+        uint128[] memory rates = new uint128[](2);
+        rates[0] = RATE;
+        rates[1] = RATE;
+
+        uint128[] memory deps = new uint128[](2);
+        deps[0] = 100e6;
+        deps[1] = 100e6;
+
+        string[] memory refs = new string[](2);
+        refs[0] = "A";
+        refs[1] = "B";
+
+        uint64 startAt = uint64(block.timestamp + 1 days);
+        vm.prank(employer);
+        uint256[] memory ids = payroll.createStreams(emps, rates, deps, refs, startAt);
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            (, , , uint64 start, , , , , ,) = payroll.streams(ids[i]);
+            assertEq(uint256(start), uint256(startAt));
+        }
+    }
 }

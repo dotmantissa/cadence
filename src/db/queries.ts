@@ -103,6 +103,41 @@ export async function getPublicIdentitiesByAddresses(
 }
 
 /**
+ * Forward-resolve a batch of @handles to the wallet behind each, in one query,
+ * so a batch payment can look up many payees at once instead of firing a lookup
+ * per row. Case-insensitive (handles are stored lowercase). Returns a map from
+ * lowercased handle → { walletAddress, displayName }; only handles that map to a
+ * known user appear. Never returns email or any other private field.
+ */
+export async function getUsersByUsernames(
+  usernames: string[]
+): Promise<Record<string, { walletAddress: string | null; displayName: string | null }>> {
+  const cleaned = Array.from(
+    new Set(usernames.map((u) => u.trim().toLowerCase()).filter((u) => u.length > 0))
+  );
+  if (cleaned.length === 0) return {};
+
+  const rows = await db
+    .select({
+      walletAddress: users.walletAddress,
+      username: users.username,
+      displayName: users.displayName,
+    })
+    .from(users)
+    .where(inArray(users.username, cleaned));
+
+  const map: Record<string, { walletAddress: string | null; displayName: string | null }> = {};
+  for (const r of rows) {
+    if (!r.username) continue;
+    map[r.username.toLowerCase()] = {
+      walletAddress: r.walletAddress,
+      displayName: r.displayName,
+    };
+  }
+  return map;
+}
+
+/**
  * Whether a handle can still be claimed. Reserved words are never available;
  * otherwise it's free only if no row holds it. Assumes the caller has already
  * validated the format.

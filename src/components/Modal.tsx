@@ -18,7 +18,18 @@ interface Props {
   className?: string;
   /** Make the modal wider for content-heavy views like statements. */
   wide?: boolean;
+  /**
+   * Panel width. `wide` is kept as an alias for `xl`. Defaults to `md`.
+   * md → forms, lg → the batch editor, xl → statements/previews.
+   */
+  size?: "md" | "lg" | "xl";
 }
+
+const SIZE_CLASS: Record<NonNullable<Props["size"]>, string> = {
+  md: "max-w-md",
+  lg: "max-w-2xl",
+  xl: "max-w-5xl",
+};
 
 /** Shared modal shell: dark scrim, spring-in panel, escape + scroll lock. */
 export function Modal({
@@ -29,6 +40,7 @@ export function Modal({
   children,
   className = "",
   wide = false,
+  size,
 }: Props) {
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -62,7 +74,7 @@ export function Modal({
           transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
           onClick={(e) => e.stopPropagation()}
           className={`w-full ${
-            wide ? "max-w-5xl" : "max-w-md"
+            SIZE_CLASS[size ?? (wide ? "xl" : "md")]
           } overflow-hidden rounded-none border border-ink/10 bg-paper p-6 shadow-[0_40px_100px_-40px_rgba(23,22,24,0.5)] ${className}`}
         >
           <div className="flex items-center justify-between">

@@ -77,6 +77,27 @@ export function useApi() {
       }),
 
     /**
+     * Resolve a mixed batch of recipient entries (raw addresses and/or @handles)
+     * to wallets in one round-trip, for batch payments. Results come back in the
+     * same order they were sent, each tagged resolved / not_found / invalid.
+     */
+    resolveBatch: (entries: string[]) =>
+      request<{
+        results: {
+          input: string;
+          kind: "address" | "username";
+          status: "resolved" | "not_found" | "invalid";
+          walletAddress: string | null;
+          username: string | null;
+          displayName: string | null;
+          error?: string;
+        }[];
+      }>("/api/resolve-batch", {
+        method: "POST",
+        body: JSON.stringify({ entries }),
+      }),
+
+    /**
      * Ask the server to drip Arc testnet USDC to `address`. Resolves to one of:
      * `{ dripped }` (funded server-side), `{ rateLimited }` (funded recently),
      * or `{ fallback }` (client should open the public faucet).

@@ -1,22 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useCreateStream, useApproveUsdc, useUsdcAllowance, useUsdcBalance } from "@/hooks/usePayroll";
+import { useCreateStream, useApproveUsdc, useUsdcAllowance, useUsdcBalance, useBatchCreateStreams } from "@/hooks/usePayroll";
 import { parseUsdc, formatUsdc, shortenAddress } from "@/lib/utils";
 import { useAccount } from "wagmi";
 import { cn } from "@/lib/utils";
 import { useApi } from "@/hooks/useApi";
 import { validateUsername } from "@/lib/username";
-import { AtSign, Wallet, Check, Loader2, X, Clock, CalendarClock } from "lucide-react";
+import { AtSign, Wallet, Check, Loader2, X, Clock, CalendarClock, Users } from "lucide-react";
 import { Modal } from "./Modal";
+import { BatchRecipients } from "./BatchRecipients";
 import { isAddress } from "viem";
+import {
+  newRecipient,
+  planBatch,
+  type AllocationMode,
+  type BatchRecipient,
+} from "@/lib/batch";
 
 interface Props {
   onClose: () => void;
   onSuccess?: () => void;
 }
 
-type Mode = "address" | "username";
+type StreamMode = "single" | "batch";
+type SingleRecipientMode = "address" | "username";
 
 const field =
   "w-full rounded-2xl border border-ink/10 bg-paper-warm px-3.5 py-3 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20";
@@ -25,7 +33,10 @@ const labelCls = "mb-1.5 block text-xs font-medium uppercase tracking-wide text-
 export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const { address } = useAccount();
   const { api } = useApi();
-  const [mode, setMode] = useState<Mode>("address");
+  const [streamMode, setStreamMode] = useState<StreamMode>("single");
+
+  // Single-stream state (existing flow)
+  const [singleMode, setSingleMode] = useState<SingleRecipientMode>("address");
   const [employee, setEmployee] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
   const [streamDays, setStreamDays] = useState("30");
@@ -35,7 +46,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const [txStatus, setTxStatus] = useState<"idle" | "approving" | "creating">("idle");
   const [txError, setTxError] = useState<string | null>(null);
 
-  // Handle → wallet resolution. Only used in username mode.
+  // Single-stream resolution (address mode: check if registered; username mode: resolve handle)
   const [resolved, setResolved] = useState<{
     walletAddress: `0x${string}`;
     username: string | null;
@@ -45,30 +56,32 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const [resolveError, setResolveError] = useState<string | null>(null);
   const resolveSeq = useRef(0);
 
-  // Address validation + registered-user check. Only used in address mode.
   const [addressRegistered, setAddressRegistered] = useState(false);
   const [checkingAddress, setCheckingAddress] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
   const addressSeq = useRef(0);
 
+  // Batch-stream state
+  const [recipients, setRecipients] = useState<BatchRecipient[]>([newRecipient()]);
+  const [allocationMode, setAllocationMode] = useState<AllocationMode>("per-recipient");
+  const [sharedAmount, setSharedAmount] = useState("");
+
   const { data: balance } = useUsdcBalance(address);
   const { data: allowance } = useUsdcAllowance(address);
   const { approve } = useApproveUsdc();
   const { createStream } = useCreateStream();
+  const { batchCreate, progress, running, error: batchError, reset: resetBatch } = useBatchCreateStreams();
 
+  // ---- Single-stream math & validation ----
   const days = Math.max(1, parseInt(streamDays) || 30);
   const depositAmount = parseUsdc(totalAmount);
   const dailyRateRaw = depositAmount > 0n ? depositAmount / BigInt(days) : 0n;
   const ratePerSecond = dailyRateRaw / 86400n;
 
-  // Scheduling. "now" streams pass 0 (contract clamps to block time); a
-  // scheduled stream passes a future unix timestamp so it escrows now but does
-  // not accrue until then.
   const scheduledMs = startMode === "schedule" && startAtLocal ? new Date(startAtLocal).getTime() : NaN;
   const scheduledInvalid = startMode === "schedule" && (!startAtLocal || isNaN(scheduledMs) || scheduledMs <= Date.now());
   const startAt: bigint =
     startMode === "schedule" && !isNaN(scheduledMs) ? BigInt(Math.floor(scheduledMs / 1000)) : 0n;
-  // `min` for the datetime-local input: one minute out, in local wall time.
   const minLocal = (() => {
     const d = new Date(Date.now() + 60_000);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -80,18 +93,19 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const trimmed = employee.trim();
   const isRawAddress = trimmed.startsWith("0x") && trimmed.length === 42;
 
-  // The wallet we'll actually stream to: the typed address in address mode (only
-  // when valid AND registered), or the resolved handle's wallet in username mode.
-  const recipient: `0x${string}` | null =
-    mode === "address"
+  const singleRecipient: `0x${string}` | null =
+    singleMode === "address"
       ? isRawAddress && isAddress(trimmed) && addressRegistered
         ? (trimmed as `0x${string}`)
         : null
       : resolved?.walletAddress ?? null;
 
-  // Debounced handle resolution.
+  // ---- Batch-stream math & validation ----
+  const batchPlan = planBatch(allocationMode, recipients, sharedAmount, days, balance);
+
+  // ---- Single-stream resolution ----
   useEffect(() => {
-    if (mode !== "username") return;
+    if (singleMode !== "username") return;
     setResolved(null);
     setResolveError(null);
     const handle = trimmed.replace(/^@/, "");
@@ -123,11 +137,10 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employee, mode]);
+  }, [employee, singleMode]);
 
-  // Debounced address validation + registered-user check.
   useEffect(() => {
-    if (mode !== "address") return;
+    if (singleMode !== "address") return;
     setAddressRegistered(false);
     setAddressError(null);
     if (trimmed === "") return;
@@ -159,30 +172,39 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employee, mode]);
+  }, [employee, singleMode]);
 
-  function switchMode(next: Mode) {
-    if (next === mode) return;
-    setMode(next);
+  function switchSingleMode(next: SingleRecipientMode) {
+    if (next === singleMode) return;
+    setSingleMode(next);
     setEmployee("");
     setResolved(null);
     setResolveError(null);
   }
 
-  const needsApproval = depositAmount > 0n && (!allowance || allowance < depositAmount);
+  const needsApproval =
+    streamMode === "single"
+      ? depositAmount > 0n && (!allowance || allowance < depositAmount)
+      : batchPlan.total > 0n && (!allowance || allowance < batchPlan.total);
+
   const insufficientBalance =
-    balance !== undefined && depositAmount > 0n && balance < depositAmount;
-  const isPending = txStatus !== "idle";
-  const canSubmit =
-    recipient !== null &&
+    streamMode === "single"
+      ? balance !== undefined && depositAmount > 0n && balance < depositAmount
+      : batchPlan.insufficientBalance;
+
+  const isPending = txStatus !== "idle" || running;
+  const canSubmitSingle =
+    singleRecipient !== null &&
     depositAmount > 0n &&
     ratePerSecond > 0n &&
     !insufficientBalance &&
     !scheduledInvalid;
 
-  async function handleSubmit(e: React.FormEvent) {
+  const canSubmitBatch = batchPlan.canSubmit;
+
+  async function handleSubmitSingle(e: React.FormEvent) {
     e.preventDefault();
-    if (!recipient) return;
+    if (!singleRecipient) return;
     if (depositAmount === 0n || ratePerSecond === 0n) return;
 
     setTxError(null);
@@ -192,7 +214,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         await approve(depositAmount);
       }
       setTxStatus("creating");
-      await createStream(recipient, ratePerSecond, depositAmount, invoiceRef, startAt);
+      await createStream(singleRecipient, ratePerSecond, depositAmount, invoiceRef, startAt);
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
@@ -202,171 +224,263 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
     }
   }
 
+  async function handleSubmitBatch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!batchPlan.canSubmit) return;
+
+    setTxError(null);
+    resetBatch();
+    const streams = batchPlan.rows
+      .filter((p) => p.ok)
+      .map((p) => ({
+        employee: p.row.walletAddress!,
+        ratePerSecond: p.ratePerSecond,
+        deposit: p.deposit,
+        invoiceRef: invoiceRef || "",
+        startAt,
+      }));
+
+    const result = await batchCreate(batchPlan.total, streams);
+    if (result.ok) {
+      onSuccess?.();
+      onClose();
+    }
+    // On partial success or error, keep the modal open with progress visible.
+  }
+
+  const activeError = streamMode === "single" ? txError : batchError;
+
   return (
     <Modal
-      title="Open a stream"
+      title={streamMode === "single" ? "Open a stream" : "Open batch streams"}
+      size={streamMode === "batch" ? "lg" : "md"}
       onClose={onClose}
       closeDisabled={isPending}
-      dismissable={false}
+      dismissable={!isPending}
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={streamMode === "single" ? handleSubmitSingle : handleSubmitBatch} className="space-y-4">
+        {/* Stream mode toggle: single vs batch */}
         <div>
-          <label className={labelCls}>Who is getting paid</label>
-
-          {/* Streamer picks how to name the recipient. */}
+          <label className={labelCls}>Stream mode</label>
           <div className="mb-2 inline-flex rounded-full border border-ink/10 bg-paper-warm p-0.5 text-xs font-medium">
             <button
               type="button"
-              onClick={() => switchMode("address")}
+              disabled={isPending}
+              onClick={() => setStreamMode("single")}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors",
-                mode === "address" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors disabled:opacity-40",
+                streamMode === "single" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
               )}
             >
-              <Wallet size={13} /> Wallet address
+              <Wallet size={13} /> Single
             </button>
             <button
               type="button"
-              onClick={() => switchMode("username")}
+              disabled={isPending}
+              onClick={() => setStreamMode("batch")}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors",
-                mode === "username" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors disabled:opacity-40",
+                streamMode === "batch" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
               )}
             >
-              <AtSign size={13} /> Username
+              <Users size={13} /> Batch
             </button>
           </div>
-
-          {mode === "address" ? (
-            <>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={employee}
-                  onChange={(e) => setEmployee(e.target.value)}
-                  placeholder="0x wallet address"
-                  className={cn(field, "font-mono pr-9")}
-                  required
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2">
-                  {checkingAddress && <Loader2 size={15} className="animate-spin text-ink/40" />}
-                  {!checkingAddress && addressRegistered && <Check size={15} className="text-emerald-500" />}
-                  {!checkingAddress && addressError && trimmed !== "" && (
-                    <X size={15} className="text-red-500" />
-                  )}
-                </span>
-              </div>
-              <div className="mt-1.5 min-h-[1rem] text-xs">
-                {addressRegistered && (
-                  <span className="text-ink/55">Registered Cadence user</span>
-                )}
-                {!addressRegistered && addressError && trimmed !== "" && (
-                  <span className="text-red-500">{addressError}</span>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/40">
-                  <AtSign size={15} />
-                </span>
-                <input
-                  type="text"
-                  value={employee}
-                  onChange={(e) =>
-                    setEmployee(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))
-                  }
-                  placeholder="satoshi_streams"
-                  autoComplete="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  className={cn(field, "pl-9 pr-9 font-mono")}
-                  required
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2">
-                  {resolving && <Loader2 size={15} className="animate-spin text-ink/40" />}
-                  {!resolving && resolved && <Check size={15} className="text-emerald-500" />}
-                  {!resolving && resolveError && trimmed !== "" && (
-                    <X size={15} className="text-red-500" />
-                  )}
-                </span>
-              </div>
-              <div className="mt-1.5 min-h-[1rem] text-xs">
-                {resolved && (
-                  <span className="text-ink/55">
-                    Paying{" "}
-                    {resolved.displayName ? `${resolved.displayName} · ` : ""}
-                    <span className="font-mono text-ink/70">
-                      {shortenAddress(resolved.walletAddress)}
-                    </span>
-                  </span>
-                )}
-                {!resolved && resolveError && trimmed !== "" && (
-                  <span className="text-red-500">{resolveError}</span>
-                )}
-              </div>
-            </>
-          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Total (USDC)</label>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-ink/40">$</span>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={totalAmount}
-                onChange={(e) => setTotalAmount(e.target.value)}
-                placeholder="3,000.00"
-                className={cn(field, "pl-7")}
-                required
-              />
-            </div>
-            {/* Balance, highlighted right under the amount it's checked against. */}
-            <p className="mt-1.5 text-xs">
-              {balance === undefined ? (
-                <span className="inline-flex items-center gap-1.5 text-ink/40">
-                  <Loader2 size={11} className="animate-spin" /> checking balance…
-                </span>
-              ) : (
-                <span
+        {streamMode === "single" ? (
+          <>
+            {/* SINGLE-STREAM FLOW (existing) */}
+            <div>
+              <label className={labelCls}>Who is getting paid</label>
+              <div className="mb-2 inline-flex rounded-full border border-ink/10 bg-paper-warm p-0.5 text-xs font-medium">
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => switchSingleMode("address")}
                   className={cn(
-                    "font-medium",
-                    insufficientBalance ? "text-red-500" : "text-volt"
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors disabled:opacity-40",
+                    singleMode === "address" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
                   )}
                 >
-                  Balance: <span className="font-mono">${formatUsdc(balance)}</span>
-                  {insufficientBalance && " — not enough"}
-                </span>
-              )}
-            </p>
-          </div>
-          <div>
-            <label className={labelCls}>Over how many days</label>
-            <input
-              type="number"
-              min="1"
-              max="365"
-              value={streamDays}
-              onChange={(e) => setStreamDays(e.target.value)}
-              className={field}
-            />
-          </div>
-        </div>
+                  <Wallet size={13} /> Wallet address
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => switchSingleMode("username")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors disabled:opacity-40",
+                    singleMode === "username" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
+                  )}
+                >
+                  <AtSign size={13} /> Username
+                </button>
+              </div>
 
-        {/* When it starts */}
+              {singleMode === "address" ? (
+                <>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={employee}
+                      disabled={isPending}
+                      onChange={(e) => setEmployee(e.target.value)}
+                      placeholder="0x wallet address"
+                      className={cn(field, "font-mono pr-9")}
+                      required
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                      {checkingAddress && <Loader2 size={15} className="animate-spin text-ink/40" />}
+                      {!checkingAddress && addressRegistered && <Check size={15} className="text-emerald-500" />}
+                      {!checkingAddress && addressError && trimmed !== "" && (
+                        <X size={15} className="text-red-500" />
+                      )}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 min-h-[1rem] text-xs">
+                    {addressRegistered && (
+                      <span className="text-ink/55">Registered Cadence user</span>
+                    )}
+                    {!addressRegistered && addressError && trimmed !== "" && (
+                      <span className="text-red-500">{addressError}</span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/40">
+                      <AtSign size={15} />
+                    </span>
+                    <input
+                      type="text"
+                      value={employee}
+                      disabled={isPending}
+                      onChange={(e) =>
+                        setEmployee(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))
+                      }
+                      placeholder="satoshi_streams"
+                      autoComplete="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      className={cn(field, "pl-9 pr-9 font-mono")}
+                      required
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                      {resolving && <Loader2 size={15} className="animate-spin text-ink/40" />}
+                      {!resolving && resolved && <Check size={15} className="text-emerald-500" />}
+                      {!resolving && resolveError && trimmed !== "" && (
+                        <X size={15} className="text-red-500" />
+                      )}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 min-h-[1rem] text-xs">
+                    {resolved && (
+                      <span className="text-ink/55">
+                        Paying{" "}
+                        {resolved.displayName ? `${resolved.displayName} · ` : ""}
+                        <span className="font-mono text-ink/70">
+                          {shortenAddress(resolved.walletAddress)}
+                        </span>
+                      </span>
+                    )}
+                    {!resolved && resolveError && trimmed !== "" && (
+                      <span className="text-red-500">{resolveError}</span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Total (USDC)</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-ink/40">$</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={totalAmount}
+                    disabled={isPending}
+                    onChange={(e) => setTotalAmount(e.target.value)}
+                    placeholder="3,000.00"
+                    className={cn(field, "pl-7")}
+                    required
+                  />
+                </div>
+                <p className="mt-1.5 text-xs">
+                  {balance === undefined ? (
+                    <span className="inline-flex items-center gap-1.5 text-ink/40">
+                      <Loader2 size={11} className="animate-spin" /> checking balance…
+                    </span>
+                  ) : (
+                    <span
+                      className={cn(
+                        "font-medium",
+                        insufficientBalance ? "text-red-500" : "text-volt"
+                      )}
+                    >
+                      Balance: <span className="font-mono">${formatUsdc(balance)}</span>
+                      {insufficientBalance && " — not enough"}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <label className={labelCls}>Over how many days</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={streamDays}
+                  disabled={isPending}
+                  onChange={(e) => setStreamDays(e.target.value)}
+                  className={field}
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* BATCH-STREAM FLOW */}
+            <BatchRecipients
+              recipients={recipients}
+              setRecipients={setRecipients}
+              mode={allocationMode}
+              setMode={setAllocationMode}
+              sharedAmount={sharedAmount}
+              setSharedAmount={setSharedAmount}
+              plan={batchPlan}
+              balance={balance}
+              disabled={isPending}
+            />
+            <div>
+              <label className={labelCls}>Over how many days</label>
+              <input
+                type="number"
+                min="1"
+                max="365"
+                value={streamDays}
+                disabled={isPending}
+                onChange={(e) => setStreamDays(e.target.value)}
+                className={field}
+              />
+            </div>
+          </>
+        )}
+
+        {/* When it starts (shared by single & batch) */}
         <div>
           <label className={labelCls}>When it starts</label>
           <div className="mb-2 inline-flex rounded-full border border-ink/10 bg-paper-warm p-0.5 text-xs font-medium">
             <button
               type="button"
+              disabled={isPending}
               onClick={() => setStartMode("now")}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors",
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors disabled:opacity-40",
                 startMode === "now" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
               )}
             >
@@ -374,9 +488,10 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
             </button>
             <button
               type="button"
+              disabled={isPending}
               onClick={() => setStartMode("schedule")}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors",
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors disabled:opacity-40",
                 startMode === "schedule" ? "bg-volt text-white" : "text-ink/50 hover:text-ink"
               )}
             >
@@ -389,6 +504,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                 type="datetime-local"
                 value={startAtLocal}
                 min={minLocal}
+                disabled={isPending}
                 onChange={(e) => setStartAtLocal(e.target.value)}
                 className={field}
               />
@@ -407,19 +523,21 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
           )}
         </div>
 
-        {depositAmount > 0n && (
-          <div className="space-y-2 rounded-2xl border border-volt/15 bg-volt-wash px-4 py-3">
+        {/* Rate preview (single only) */}
+        {streamMode === "single" && depositAmount > 0n && (
+          <div className="space-y-2 rounded-2xl border border-volt/15 bg-volt/[0.06] px-4 py-3">
             <div className="flex justify-between text-sm">
-              <span className="text-panel/55">Streams at</span>
-              <span className="font-mono font-medium text-panel">${formatUsdc(dailyRateRaw)} / day</span>
+              <span className="text-ink/55">Streams at</span>
+              <span className="font-mono font-medium text-ink">${formatUsdc(dailyRateRaw)} / day</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-panel/45">Per second</span>
-              <span className="font-mono text-panel/60">${formatUsdc(ratePerSecond, 8)} / sec</span>
+              <span className="text-ink/45">Per second</span>
+              <span className="font-mono text-ink/60">${formatUsdc(ratePerSecond, 8)} / sec</span>
             </div>
           </div>
         )}
 
+        {/* Remark (shared) */}
         <div>
           <label className={labelCls}>
             Remark <span className="normal-case text-ink/30">(optional)</span>
@@ -427,25 +545,49 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
           <input
             type="text"
             value={invoiceRef}
+            disabled={isPending}
             onChange={(e) => setInvoiceRef(e.target.value)}
             placeholder="e.g. June retainer, INV-2026-001"
             className={field}
           />
         </div>
 
-        {txError && (
+        {/* Batch progress */}
+        {streamMode === "batch" && running && (
+          <div className="rounded-2xl border border-volt/20 bg-volt/[0.06] p-4">
+            <p className="mb-2 text-sm font-medium text-ink">Creating streams…</p>
+            <div className="space-y-1">
+              {progress.map((st, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  {st === "pending" && <Loader2 size={13} className="animate-spin text-volt" />}
+                  {st === "success" && <Check size={13} className="text-emerald-500" />}
+                  {st === "error" && <X size={13} className="text-red-500" />}
+                  {st === "idle" && <span className="h-3 w-3 rounded-full border border-ink/20" />}
+                  <span className={cn("font-mono", st === "success" && "text-ink/55")}>
+                    Stream {i + 1}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeError && (
           <p className="rounded-2xl border border-red-500/20 bg-red-500/5 px-3.5 py-2.5 text-xs text-red-500">
-            {txError}
+            {activeError}
           </p>
         )}
 
         <button
           type="submit"
-          disabled={isPending || !canSubmit}
+          disabled={
+            isPending ||
+            (streamMode === "single" ? !canSubmitSingle : !canSubmitBatch)
+          }
           className={cn(
             "w-full rounded-full py-3.5 text-sm font-medium transition-colors disabled:opacity-40",
             needsApproval && !isPending
-              ? "border border-volt/30 bg-volt-wash text-volt hover:bg-volt/10"
+              ? "border border-volt/30 bg-volt/[0.06] text-volt hover:bg-volt/10"
               : "bg-volt text-white hover:bg-volt-bright"
           )}
         >
@@ -453,10 +595,14 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
             ? "Approving USDC, confirm in wallet"
             : txStatus === "creating"
             ? "Opening stream, confirm in wallet"
+            : running
+            ? `Creating ${progress.filter((s) => s === "success").length} / ${progress.length} streams…`
             : insufficientBalance
             ? "Not enough USDC"
             : needsApproval
-            ? "Approve and open stream"
+            ? `Approve and open ${streamMode === "batch" ? `${batchPlan.readyCount} streams` : "stream"}`
+            : streamMode === "batch"
+            ? `Open ${batchPlan.readyCount} streams`
             : "Open stream"}
         </button>
       </form>

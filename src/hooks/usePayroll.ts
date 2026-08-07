@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useRef } from "react";
-import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useMemo, useRef, useState } from "react";
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useConfig } from "wagmi";
+import { waitForTransactionReceipt } from "@wagmi/core";
 import { keepPreviousData } from "@tanstack/react-query";
 import { PAYROLL_ADDRESS, PAYROLL_ABI, USDC_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 
@@ -253,6 +254,100 @@ export function useApproveUsdc() {
     error,
     hash,
   };
+}
+
+// ---- Batch streaming -----------------------------------------------------------
+
+export interface BatchStreamParams {
+  employee: `0x${string}`;
+  ratePerSecond: bigint;
+  deposit: bigint;
+  invoiceRef: string;
+  startAt: bigint;
+}
+
+export type BatchStreamProgress = "idle" | "pending" | "success" | "error";
+
+/**
+ * Batch-create many streams after a single USDC approval of the total. The hook
+ * sequences the tx calls one by one (approve, then each createStream), awaiting
+ * each receipt before firing the next so nonces settle cleanly on the Privy
+ * embedded wallet — which can flap if we fire too fast without tracking nonces.
+ *
+ * Progress is exposed per stream as an array that stays stable across re-renders.
+ * On partial failure (one stream errors after others succeed), the hook stops and
+ * returns those that made it, so the payer knows which recipients were funded.
+ */
+export function useBatchCreateStreams() {
+  const config = useConfig();
+  const { writeContractAsync } = useWriteContract();
+  const [progress, setProgress] = useState<BatchStreamProgress[]>([]);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const batchCreate = async (total: bigint, streams: BatchStreamParams[]) => {
+    if (streams.length === 0) return { ok: false as const, error: "no streams to create" };
+    setProgress(streams.map(() => "idle"));
+    setRunning(true);
+    setError(null);
+
+    const succeeded: number[] = [];
+
+    try {
+      // 1. Approve the full total once.
+      setProgress((prev) => prev.map(() => "pending"));
+      const approveHash = await writeContractAsync({
+        address: USDC_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [PAYROLL_ADDRESS, total],
+        ...ARC_FEE,
+      });
+      await waitForTransactionReceipt(config, { hash: approveHash });
+
+      // 2. Create each stream sequentially, awaiting the receipt before the next.
+      for (let i = 0; i < streams.length; i++) {
+        const s = streams[i];
+        setProgress((prev) => prev.map((st, j) => (j === i ? "pending" : st)));
+        try {
+          const hash = await writeContractAsync({
+            address: PAYROLL_ADDRESS,
+            abi: PAYROLL_ABI,
+            functionName: "createStream",
+            args: [s.employee, s.ratePerSecond, s.deposit, s.invoiceRef, s.startAt],
+            ...ARC_FEE,
+          });
+          await waitForTransactionReceipt(config, { hash });
+          setProgress((prev) => prev.map((st, j) => (j === i ? "success" : st)));
+          succeeded.push(i);
+        } catch (err: unknown) {
+          const e = err as { shortMessage?: string; message?: string };
+          const msg = e?.shortMessage ?? e?.message ?? "tx rejected";
+          setProgress((prev) => prev.map((st, j) => (j === i ? "error" : st)));
+          setError(`Stream ${i + 1} failed: ${msg}`);
+          setRunning(false);
+          return { ok: false as const, error: msg, succeeded };
+        }
+      }
+
+      setRunning(false);
+      return { ok: true as const, succeeded };
+    } catch (err: unknown) {
+      const e = err as { shortMessage?: string; message?: string };
+      const msg = e?.shortMessage ?? e?.message ?? "approval failed";
+      setError(msg);
+      setRunning(false);
+      return { ok: false as const, error: msg, succeeded };
+    }
+  };
+
+  const reset = () => {
+    setProgress([]);
+    setRunning(false);
+    setError(null);
+  };
+
+  return { batchCreate, progress, running, error, reset };
 }
 
 // ---- Stream requests + negotiation -----------------------------------------

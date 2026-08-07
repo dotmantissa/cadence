@@ -184,7 +184,7 @@ export function RequestStreamModal({ onClose, onSuccess }: Props) {
   }
 
   return (
-    <Modal title="Request a stream" onClose={onClose} closeDisabled={submitting} dismissable={false}>
+    <Modal title="Request a stream" onClose={onClose} closeDisabled={submitting}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className={labelCls}>Who should pay you</label>

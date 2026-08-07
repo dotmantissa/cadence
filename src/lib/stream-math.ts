@@ -72,7 +72,15 @@ export function streamMath(s: StreamMeta, nowSec: number = Math.floor(Date.now()
   const now = BigInt(nowSec);
   const rate = s.ratePerSecond;
 
-  const notStarted = s.active && s.startTime > now;
+  // A "start now" stream sends startAt = 0, which the contract stamps to the
+  // block timestamp of the mining block. That block time can sit a few seconds
+  // ahead of the viewer's own clock, which would make a just-opened stream read
+  // as "scheduled" until local time catches up. We absorb that skew with a small
+  // tolerance: a stream only counts as scheduled when its start is meaningfully
+  // in the future. The genuine minimum schedule lead is 60s (enforced in the
+  // create modal), so this window never mislabels a real future schedule.
+  const START_SKEW_SEC = 30n;
+  const notStarted = s.active && s.startTime > now + START_SKEW_SEC;
   const flowing = s.active && !notStarted;
 
   // Paid out to date is now authoritative on-chain (the contract tracks a

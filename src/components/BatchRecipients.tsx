@@ -276,7 +276,7 @@ export function BatchRecipients({
       )}
 
       {/* Recipient rows */}
-      <div className="max-h-[38vh] space-y-2 overflow-y-auto pr-1">
+      <div className="space-y-2">
         {recipients.map((r, i) => {
           const rowPlan = plan.rows[i];
           return (

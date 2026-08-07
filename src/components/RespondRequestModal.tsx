@@ -131,7 +131,6 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
       title={`Request #${request.id.toString()}`}
       onClose={onClose}
       closeDisabled={isPending}
-      dismissable={false}
     >
       {/* What was asked */}
       <div className="mb-4 rounded-2xl border border-ink/10 bg-paper-warm px-4 py-3 text-sm">

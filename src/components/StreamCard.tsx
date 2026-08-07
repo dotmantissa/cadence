@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass, XCircle, ExternalLink } from "lucide-react";
 import type { StreamMeta } from "@/hooks/usePayroll";
@@ -22,9 +23,28 @@ interface Props {
 export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp, onOpenReceipt }: Props) {
   const { id: streamId, employer, employee, ratePerSecond, startTime, active, invoiceRef } = stream;
 
+  // A live clock so the "begins in" countdown ticks and a scheduled stream flips
+  // to live on its own, without waiting for the next data poll. Only active
+  // streams need it — settled cards are frozen — and it pauses while the tab is
+  // hidden. Seeded once so the first paint already shows the right second.
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (!active) return;
+    const tick = () => setNowSec(Math.floor(Date.now() / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    const onVis = () => {
+      if (!document.hidden) tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [active]);
+
   // Accrued + runway are exact functions of the tuple we already have, so we
   // derive them locally instead of firing three more polling reads per card.
-  const nowSec = Math.floor(Date.now() / 1000);
   const { notStarted, flowing, streaming, phase, unclaimed, streamedSoFar, remaining, committed, runwaySeconds, cancelled } =
     streamMath(stream, nowSec);
   const secondsUntilStart = Number(startTime) - nowSec;
@@ -40,7 +60,12 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
   // Employee card shows what they can cash out (unclaimed) while the stream is
   // still active; once it's settled (cancelled or fully claimed), show the total
   // streamed amount instead. Employer card always shows cumulative total streamed.
-  const tickerSeed = perspective === "employee"
+  // A scheduled stream hasn't paid anything yet, so both perspectives instead
+  // show the committed (approved) amount it will stream once it starts, rather
+  // than a bare $0.
+  const tickerSeed = notStarted
+    ? committed
+    : perspective === "employee"
     ? (active ? unclaimed : streamedSoFar)
     : streamedSoFar;
 

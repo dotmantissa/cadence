@@ -73,7 +73,10 @@ export function StreamTicker({
   const whole = Math.floor(dollars).toLocaleString();
   const frac = String(Math.floor((dollars % 1) * 1_000_000)).padStart(6, "0");
 
-  const wholeColor = tone === "ink" ? "text-paper" : "text-ink";
+  // The dark card is a fixed, theme-independent panel, so its text must use the
+  // fixed panel foreground — not the theme-following `paper`, which flips to a
+  // near-black in dark mode and vanishes against the panel.
+  const wholeColor = tone === "ink" ? "text-panel-foreground" : "text-ink";
   const bigText = size === "lg" ? "text-4xl" : "text-3xl";
   const fracText = size === "lg" ? "text-2xl" : "text-xl";
 

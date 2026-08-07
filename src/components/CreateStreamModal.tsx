@@ -256,7 +256,6 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
       size={streamMode === "batch" ? "lg" : "md"}
       onClose={onClose}
       closeDisabled={isPending}
-      dismissable={!isPending}
     >
       <form onSubmit={streamMode === "single" ? handleSubmitSingle : handleSubmitBatch} className="space-y-4">
         {/* Stream mode toggle: single vs batch */}

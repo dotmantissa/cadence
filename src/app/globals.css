@@ -33,6 +33,21 @@
   --c-paper-dim: 38 37 42;
 }
 
+/* Theme toggle reveal: the incoming theme irises out from the toggle in a
+   circle (see ThemeToggle). Kill the default root cross-fade so only the
+   clip-path sweep shows, and layer the incoming theme above the outgoing one. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }

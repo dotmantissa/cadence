@@ -226,7 +226,7 @@ export function StatementFilterModal({ account, perspective, streams, identities
         </div>
 
         {/* Summary */}
-        <div className="rounded-2xl border border-volt/15 bg-volt-wash p-4 text-sm">
+        <div className="rounded-2xl border border-volt/20 bg-volt/[0.06] p-4 text-sm">
           <p className="font-medium text-ink">
             {filtered.length === 0 ? (
               <span className="text-ink/60">No streams match the selected filters.</span>

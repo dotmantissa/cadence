@@ -6,7 +6,7 @@ import Link from "next/link";
 
 const sides = [
   {
-    href: "/employer",
+    href: "/payer",
     tag: "for the ones paying",
     icon: Building2,
     title: "Run payroll that never clocks out",
@@ -15,7 +15,7 @@ const sides = [
     tone: "ink" as const,
   },
   {
-    href: "/employee",
+    href: "/payee",
     tag: "for the ones earning",
     icon: User,
     title: "Watch your bag grow in real time",

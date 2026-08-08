@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useConfig } from "wagmi";
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useConfig, usePublicClient, useAccount } from "wagmi";
 import { waitForTransactionReceipt } from "@wagmi/core";
 import { keepPreviousData } from "@tanstack/react-query";
 import { PAYROLL_ADDRESS, PAYROLL_ABI, USDC_ADDRESS, ERC20_ABI } from "@/lib/contracts";
@@ -19,6 +19,68 @@ const ARC_FEE = {
   maxFeePerGas: 50_000_000_000n, // 50 Gwei — 2.5x the 20 Gwei floor for headroom
   maxPriorityFeePerGas: 2_000_000_000n, // 2 Gwei tip to nudge inclusion
 } as const;
+
+/**
+ * Type of the wagmi public client, so the estimator helper can accept it without
+ * pulling viem's client generics into every call site.
+ */
+type PublicClient = ReturnType<typeof usePublicClient>;
+
+/**
+ * Resolve a dynamic gas *limit* for a write so external wallets can skip their own
+ * `eth_estimateGas` round-trip and pop the confirm prompt immediately.
+ *
+ * Why this exists: with an injected wallet (MetaMask/Coinbase), wagmi hands the tx
+ * to the wallet, which then estimates gas against ITS OWN configured Arc RPC before
+ * showing the prompt. That endpoint is outside our control and is usually what makes
+ * the popup lag. When we supply an explicit `gas`, the wallet uses it as-is and skips
+ * that estimate — the prompt appears at once (the user can still edit it).
+ *
+ * The limit is always a LIVE on-chain estimate (never a baked-in constant), run over
+ * our reliable same-origin `/api/rpc` path with a 20% safety buffer. If the estimate
+ * fails (e.g. a create/top-up whose USDC approval isn't mined yet, so `transferFrom`
+ * would revert during estimation) or is slower than 1s, we return no `gas` at all and
+ * the wallet falls back to estimating exactly as it does today — no regression, and
+ * no hardcoded fallback number anywhere.
+ */
+async function dynamicGas(
+  client: PublicClient,
+  account: `0x${string}` | undefined,
+  params: {
+    address: `0x${string}`;
+    abi: typeof PAYROLL_ABI | typeof ERC20_ABI;
+    functionName: string;
+    args: readonly unknown[];
+  }
+): Promise<{ gas?: bigint }> {
+  if (!client || !account) return {};
+  try {
+    const estimate = client.estimateContractGas({
+      address: params.address,
+      // viem's estimateContractGas is heavily overloaded; the abi/functionName/args
+      // are validated at the call sites that build them, so we widen here.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      abi: params.abi as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      functionName: params.functionName as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      args: params.args as any,
+      account,
+    });
+    // Never let a slow estimate become the delay we're trying to remove: if it
+    // doesn't resolve within 1s, drop it and let the wallet estimate instead.
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("gas-estimate-timeout")), 1000)
+    );
+    const gas = (await Promise.race([estimate, timeout])) as bigint;
+    // 20% headroom over the point estimate to absorb block-to-block variance.
+    return { gas: (gas * 120n) / 100n };
+  } catch {
+    // Estimate reverted or timed out — omit gas so the wallet estimates as before.
+    return {};
+  }
+}
+
 
 /** Decoded shape of a `streams(id)` tuple, keyed for readability. */
 export interface StreamMeta {
@@ -166,10 +228,19 @@ export function useUsdcAllowance(owner: `0x${string}` | undefined) {
 export function useWithdraw() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const publicClient = usePublicClient();
+  const { address } = useAccount();
 
   return {
-    withdraw: (streamId: bigint) =>
-      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "withdraw", args: [streamId], ...ARC_FEE }),
+    withdraw: async (streamId: bigint) => {
+      const gas = await dynamicGas(publicClient, address, {
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "withdraw",
+        args: [streamId],
+      });
+      return writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "withdraw", args: [streamId], ...gas, ...ARC_FEE });
+    },
     isPending,
     isConfirming,
     isSuccess,
@@ -181,10 +252,19 @@ export function useWithdraw() {
 export function useTopUp() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const publicClient = usePublicClient();
+  const { address } = useAccount();
 
   return {
-    topUp: (streamId: bigint, amount: bigint) =>
-      writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "topUp", args: [streamId, amount], ...ARC_FEE }),
+    topUp: async (streamId: bigint, amount: bigint) => {
+      const gas = await dynamicGas(publicClient, address, {
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "topUp",
+        args: [streamId, amount],
+      });
+      return writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "topUp", args: [streamId, amount], ...gas, ...ARC_FEE });
+    },
     isPending,
     isConfirming,
     isSuccess,
@@ -196,13 +276,22 @@ export function useTopUp() {
 export function useCancelStream() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const publicClient = usePublicClient();
+  const { address } = useAccount();
 
   return {
     // Async so the caller can freeze the card the instant the tx is submitted
     // and refetch once it confirms, instead of the stream ticking on until the
     // next background poll happens to catch the state change.
-    cancel: (streamId: bigint) =>
-      writeContractAsync({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "cancelStream", args: [streamId], ...ARC_FEE }),
+    cancel: async (streamId: bigint) => {
+      const gas = await dynamicGas(publicClient, address, {
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "cancelStream",
+        args: [streamId],
+      });
+      return writeContractAsync({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "cancelStream", args: [streamId], ...gas, ...ARC_FEE });
+    },
     isPending,
     isConfirming,
     isSuccess,
@@ -214,22 +303,33 @@ export function useCancelStream() {
 export function useCreateStream() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const publicClient = usePublicClient();
+  const { address } = useAccount();
 
   return {
-    createStream: (
+    createStream: async (
       employee: `0x${string}`,
       ratePerSecond: bigint,
       deposit: bigint,
       invoiceRef: string,
       startAt: bigint = 0n
-    ) =>
-      writeContractAsync({
+    ) => {
+      const args = [employee, ratePerSecond, deposit, invoiceRef, startAt] as const;
+      const gas = await dynamicGas(publicClient, address, {
         address: PAYROLL_ADDRESS,
         abi: PAYROLL_ABI,
         functionName: "createStream",
-        args: [employee, ratePerSecond, deposit, invoiceRef, startAt],
+        args,
+      });
+      return writeContractAsync({
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "createStream",
+        args,
+        ...gas,
         ...ARC_FEE,
-      }),
+      });
+    },
     isPending,
     isConfirming,
     isSuccess,
@@ -241,16 +341,26 @@ export function useCreateStream() {
 export function useApproveUsdc() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const publicClient = usePublicClient();
+  const { address } = useAccount();
 
   return {
-    approve: (amount: bigint) =>
-      writeContractAsync({
+    approve: async (amount: bigint) => {
+      const gas = await dynamicGas(publicClient, address, {
         address: USDC_ADDRESS,
         abi: ERC20_ABI,
         functionName: "approve",
         args: [PAYROLL_ADDRESS, amount],
+      });
+      return writeContractAsync({
+        address: USDC_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [PAYROLL_ADDRESS, amount],
+        ...gas,
         ...ARC_FEE,
-      }),
+      });
+    },
     isPending,
     isConfirming,
     isSuccess,
@@ -285,6 +395,8 @@ export type BatchStreamProgress = "idle" | "pending" | "success" | "error";
 export function useBatchCreateStreams() {
   const config = useConfig();
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
+  const { address } = useAccount();
   const [progress, setProgress] = useState<BatchStreamProgress[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -298,11 +410,18 @@ export function useBatchCreateStreams() {
     try {
       // 1. Approve the full total once.
       setProgress((prev) => prev.map(() => "pending"));
+      const approveGas = await dynamicGas(publicClient, address, {
+        address: USDC_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [PAYROLL_ADDRESS, total],
+      });
       const approveHash = await writeContractAsync({
         address: USDC_ADDRESS,
         abi: ERC20_ABI,
         functionName: "approve",
         args: [PAYROLL_ADDRESS, total],
+        ...approveGas,
         ...ARC_FEE,
       });
       await waitForTransactionReceipt(config, { hash: approveHash });
@@ -316,11 +435,20 @@ export function useBatchCreateStreams() {
       const refs = streams.map((s) => s.invoiceRef);
       const startAt = streams[0].startAt;
 
+      // The approval above is already mined, so estimating the batch here works
+      // cleanly (transferFrom of the total won't revert during estimation).
+      const createGas = await dynamicGas(publicClient, address, {
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "createStreams",
+        args: [employees, rates, deposits, refs, startAt],
+      });
       const hash = await writeContractAsync({
         address: PAYROLL_ADDRESS,
         abi: PAYROLL_ABI,
         functionName: "createStreams",
         args: [employees, rates, deposits, refs, startAt],
+        ...createGas,
         ...ARC_FEE,
       });
       await waitForTransactionReceipt(config, { hash });
@@ -482,17 +610,27 @@ export function usePayeeRequests(payee: `0x${string}` | undefined) {
 export function useRequestActions() {
   const { writeContractAsync, data: hash, isPending, error, reset } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const publicClient = usePublicClient();
+  const { address } = useAccount();
 
-  const call = (functionName: string, args: readonly unknown[]) =>
-    writeContractAsync({
+  const call = async (functionName: string, args: readonly unknown[]) => {
+    const gas = await dynamicGas(publicClient, address, {
+      address: PAYROLL_ADDRESS,
+      abi: PAYROLL_ABI,
+      functionName,
+      args,
+    });
+    return writeContractAsync({
       address: PAYROLL_ADDRESS,
       abi: PAYROLL_ABI,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       functionName: functionName as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       args: args as any,
+      ...gas,
       ...ARC_FEE,
     });
+  };
 
   return {
     /** Payee opens a request asking `payer` to fund a stream. No funds move. */

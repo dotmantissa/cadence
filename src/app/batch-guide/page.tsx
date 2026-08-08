@@ -9,7 +9,7 @@ export default function BatchGuidePage() {
       <main className="mx-auto max-w-3xl px-5 pb-24 pt-28 sm:px-8">
         <div className="mb-8">
           <Link
-            href="/employer"
+            href="/payer"
             className="inline-flex items-center gap-1.5 text-sm text-volt transition-colors hover:text-volt-bright"
           >
             ← Back to payroll
@@ -233,7 +233,7 @@ export default function BatchGuidePage() {
           {/* Back link */}
           <div className="pt-6">
             <Link
-              href="/employer"
+              href="/payer"
               className="inline-flex items-center gap-1.5 text-sm font-medium text-volt transition-colors hover:text-volt-bright"
             >
               ← Back to payroll

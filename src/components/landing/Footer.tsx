@@ -22,12 +22,12 @@ export function Footer() {
             </p>
             <ul className="mt-5 space-y-3 text-sm">
               <li>
-                <Link href="/employer" className="text-panel-foreground/70 transition-colors hover:text-panel-foreground">
-                  Pay a team
+                <Link href="/payer" className="text-panel-foreground/70 transition-colors hover:text-panel-foreground">
+                  Pay
                 </Link>
               </li>
               <li>
-                <Link href="/employee" className="text-panel-foreground/70 transition-colors hover:text-panel-foreground">
+                <Link href="/payee" className="text-panel-foreground/70 transition-colors hover:text-panel-foreground">
                   Get paid
                 </Link>
               </li>

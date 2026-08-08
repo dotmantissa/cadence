@@ -12,8 +12,8 @@ import { ThemeToggle } from "./ThemeToggle";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "/employer", label: "Pay a team" },
-  { href: "/employee", label: "Get paid" },
+  { href: "/payer", label: "Pay" },
+  { href: "/payee", label: "Get paid" },
 ];
 
 export function Navbar() {

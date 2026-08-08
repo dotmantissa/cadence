@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { verifyCaller } from "@/lib/privy-server";
-import { upsertUser } from "@/db/queries";
+import { upsertUser, EmailBoundElsewhereError } from "@/db/queries";
 import type { User } from "@/db/schema";
 
 /**
@@ -22,8 +22,27 @@ export async function requireUser(
       response: NextResponse.json({ error: "unauthorized" }, { status: 401 }),
     };
   }
-  const user = await upsertUser(caller);
-  return { user };
+  try {
+    const user = await upsertUser(caller);
+    return { user };
+  } catch (e) {
+    // The login email belongs to someone else's account (they bound it for
+    // notifications). Refuse with a code the client turns into "sign in with
+    // your wallet" and an immediate logout.
+    if (e instanceof EmailBoundElsewhereError) {
+      return {
+        response: NextResponse.json(
+          {
+            error:
+              "That email is already linked to an account. Sign in with the wallet on that account instead.",
+            code: "email_bound_elsewhere",
+          },
+          { status: 403 }
+        ),
+      };
+    }
+    throw e;
+  }
 }
 
 export function badRequest(message: string) {

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Providers } from "./providers";
 import { AmbientWave } from "@/components/motion/AmbientWave";
+import { ScrollToTop } from "@/components/ScrollToTop";
 import "./globals.css";
 
 const geist = Geist({
@@ -69,6 +70,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-paper text-ink antialiased">
         <AmbientWave />
         <Providers>{children}</Providers>
+        <ScrollToTop />
       </body>
     </html>
   );

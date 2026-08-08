@@ -8,6 +8,8 @@ import { arcTestnet } from "@/lib/chains";
 import { WalletOnboarding } from "@/components/WalletOnboarding";
 import { UsernameGate } from "@/components/UsernameGate";
 import { ProfileProvider } from "@/components/ProfileProvider";
+import { AuthErrorBanner } from "@/components/AuthErrorBanner";
+import { AuthNotifier } from "@/components/AuthNotifier";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 // Cache-first defaults so revisiting a page paints instantly from the last
@@ -69,6 +71,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
                   user with neither picks a handle, then sets up a wallet. */}
               <WalletOnboarding />
               <UsernameGate />
+              <AuthErrorBanner />
+              <AuthNotifier />
             </ProfileProvider>
           </WagmiProvider>
         </QueryClientProvider>

@@ -1,17 +1,59 @@
 import "server-only";
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { db } from "./index";
 import { users, payees, streamDrafts } from "./schema";
 import type { Caller } from "@/lib/privy-server";
 import { PROFILE_RESERVED, USERNAME_COOLDOWN_MS } from "@/lib/username";
 
 /**
+ * Thrown when a login's email is already claimed by a different account, most
+ * often because a wallet-first user added it as their notification email. The
+ * login must not proceed: the owner signs in with their wallet, not this email.
+ */
+export class EmailBoundElsewhereError extends Error {
+  constructor() {
+    super("email_bound_elsewhere");
+    this.name = "EmailBoundElsewhereError";
+  }
+}
+
+/**
+ * Is `email` already held by some account other than `exceptPrivyId`, as either
+ * its login email or its notification email? One query across both columns, so
+ * an address is unique across the whole users table regardless of how it got
+ * there. Case-insensitive.
+ */
+async function emailOwnerExists(
+  email: string,
+  exceptPrivyId?: string
+): Promise<boolean> {
+  const value = email.trim().toLowerCase();
+  const match = or(
+    eq(sql`lower(${users.email})`, value),
+    eq(sql`lower(${users.notificationEmail})`, value)
+  );
+  const [row] = await db
+    .select({ privyId: users.privyId })
+    .from(users)
+    .where(exceptPrivyId ? and(match, ne(users.privyId, exceptPrivyId)) : match)
+    .limit(1);
+  return row != null;
+}
+
+/**
  * Fetch the users row for a caller, creating it on first sight and keeping the
  * linked email/wallet in sync on every login. This is the single entry point
  * every authenticated route uses to resolve a Privy DID to our internal id.
+ *
+ * Guard: if the caller signs in with an email that another account already owns
+ * (a wallet user bound it for notifications), we refuse rather than mint a
+ * second account for it. Callers turn this into a 403 the client acts on.
  */
 export async function upsertUser(caller: Caller) {
+  if (caller.email && (await emailOwnerExists(caller.email, caller.privyId))) {
+    throw new EmailBoundElsewhereError();
+  }
   const [row] = await db
     .insert(users)
     .values({
@@ -31,6 +73,77 @@ export async function upsertUser(caller: Caller) {
     })
     .returning();
   return row;
+}
+
+/**
+ * Bind (or replace) a wallet user's notification-only email. Returns the fresh
+ * row, or `{ conflict: true }` when the address is already tied to another
+ * account. The unique index is the final backstop: if two binds race, the loser
+ * gets a 23505 and we report it as a conflict rather than throwing.
+ */
+export async function setNotificationEmail(
+  userId: string,
+  privyId: string,
+  email: string
+): Promise<{ user: typeof users.$inferSelect } | { conflict: true }> {
+  const value = email.trim().toLowerCase();
+  if (await emailOwnerExists(value, privyId)) return { conflict: true };
+  try {
+    const [row] = await db
+      .update(users)
+      .set({ notificationEmail: value, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return { user: row };
+  } catch (e) {
+    if (isUniqueViolation(e)) return { conflict: true };
+    throw e;
+  }
+}
+
+/** Remove a wallet user's notification email. */
+export async function clearNotificationEmail(userId: string) {
+  const [row] = await db
+    .update(users)
+    .set({ notificationEmail: null, updatedAt: new Date() })
+    .where(eq(users.id, userId))
+    .returning();
+  return row;
+}
+
+/**
+ * Resolve a wallet address to whatever email we can notify at, plus the public
+ * identity for greeting copy. Returns null when the address maps to no account.
+ * The email is for server-side sending only and must never be sent to a client.
+ */
+export async function getNotifiableByAddress(
+  address: string
+): Promise<
+  | {
+      email: string | null;
+      username: string | null;
+      displayName: string | null;
+    }
+  | null
+> {
+  const value = address.trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(value)) return null;
+  const [row] = await db
+    .select({
+      email: users.email,
+      notificationEmail: users.notificationEmail,
+      username: users.username,
+      displayName: users.displayName,
+    })
+    .from(users)
+    .where(eq(sql`lower(${users.walletAddress})`, value))
+    .limit(1);
+  if (!row) return null;
+  return {
+    email: row.email ?? row.notificationEmail,
+    username: row.username,
+    displayName: row.displayName,
+  };
 }
 
 export async function updateProfile(

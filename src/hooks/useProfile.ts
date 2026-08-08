@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
-import { useApi } from "./useApi";
+import { usePrivy, useLogout } from "@privy-io/react-auth";
+import { useApi, ApiError } from "./useApi";
 import type { User } from "@/db/schema";
 
 /**
@@ -12,9 +12,13 @@ import type { User } from "@/db/schema";
  */
 export function useProfile() {
   const { ready, authenticated } = usePrivy();
+  const { logout } = useLogout();
   const { api } = useApi();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
+  // Set when a login is refused because its email belongs to another account.
+  // Surfaced globally so the connect screen can explain what to do.
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready || !authenticated) {
@@ -26,9 +30,19 @@ export function useProfile() {
     api
       .getMe()
       .then((r) => {
-        if (alive) setUser(r.user);
+        if (!alive) return;
+        setUser(r.user);
+        setAuthError(null);
       })
-      .catch(() => {
+      .catch((e) => {
+        if (!alive) return;
+        // Someone signed in with an email that is bound to a different account.
+        // Kick them back out and explain, rather than leaving a half-account.
+        if (e instanceof ApiError && e.code === "email_bound_elsewhere") {
+          setAuthError(e.message);
+          logout();
+          return;
+        }
         // Non-fatal: the app still works without the off-chain profile.
       })
       .finally(() => {
@@ -58,5 +72,7 @@ export function useProfile() {
     [api]
   );
 
-  return { user, loading, setRole, setUser };
+  const clearAuthError = useCallback(() => setAuthError(null), []);
+
+  return { user, loading, setRole, setUser, authError, clearAuthError };
 }

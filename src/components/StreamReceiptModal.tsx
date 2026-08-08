@@ -20,6 +20,7 @@ import { Modal } from "./Modal";
 import { StreamMeta } from "@/hooks/usePayroll";
 import { PAYROLL_ADDRESS } from "@/lib/contracts";
 import { streamMath } from "@/lib/stream-math";
+import { useNotify } from "@/hooks/useNotify";
 import {
   formatUsdc,
   rateToDaily,
@@ -164,9 +165,11 @@ function AntiTamperBackdrop({ id }: { id: string }) {
  * theme tokens) so it stays legible in dark mode AND exports to a clean PNG.
  */
 export function StreamReceiptModal({ stream, perspective, counterpartyName, onClose }: Props) {
+  const { notify } = useNotify();
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<null | "download" | "share">(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const notified = useRef(false);
 
   const counterparty = perspective === "employer" ? stream.employee : stream.employer;
   const generatedAt = formatTimestamp(BigInt(Math.floor(Date.now() / 1000)));
@@ -216,6 +219,17 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
     await toPng(node, opts); // warm-up (discarded)
     const dataUrl = await toPng(node, opts);
     const res = await fetch(dataUrl);
+    // A generated receipt is a courtesy record to yourself. Send it once per
+    // open, not on every re-download or share.
+    if (!notified.current) {
+      notified.current = true;
+      notify("receipt", {
+        counterpartyName: counterpartyName ?? null,
+        amount: streamedSoFar.toString(),
+        reference: stream.invoiceRef || null,
+        when: generatedAt,
+      });
+    }
     return res.blob();
   }
 

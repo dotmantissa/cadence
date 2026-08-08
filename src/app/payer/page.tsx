@@ -118,7 +118,7 @@ export default function EmployerPage() {
       <div className="min-h-screen bg-paper">
         <Navbar />
         <WalletGate
-          headline="Connect to run payroll"
+          headline="Connect to start paying"
           sub="Hook up your wallet to open streams, top them up, and watch your runway in real time."
         />
       </div>
@@ -134,7 +134,7 @@ export default function EmployerPage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="font-mono text-xs uppercase tracking-widest text-volt">the money side</p>
-            <h1 className="mt-2 text-4xl font-semibold tracking-tightest text-ink">Payroll</h1>
+            <h1 className="mt-2 text-4xl font-semibold tracking-tightest text-ink">Payments</h1>
             <p className="mt-1 text-sm text-ink/50">Every stream you are running, live.</p>
           </div>
           <motion.button

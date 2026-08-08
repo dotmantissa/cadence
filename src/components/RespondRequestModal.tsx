@@ -10,6 +10,7 @@ import {
   type RequestMeta,
 } from "@/hooks/usePayroll";
 import { parseUsdc, formatUsdc, shortenAddress, rateToDaily, cn } from "@/lib/utils";
+import { useNotify } from "@/hooks/useNotify";
 import { Clock, CalendarClock } from "lucide-react";
 import { Modal } from "./Modal";
 
@@ -46,6 +47,7 @@ function toLocalInput(unixSec: bigint): string {
  */
 export function RespondRequestModal({ request, counterpartyName, onClose, onSuccess }: Props) {
   const { address } = useAccount();
+  const { notify } = useNotify();
   const [mode, setMode] = useState<Mode>("accept");
 
   // Counter fields, prefilled from the request's current terms.
@@ -112,8 +114,22 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
       setTxStatus("submitting");
       if (mode === "accept") {
         await acceptRequest(request.id);
+        // Accepting funds and opens the stream — the payee's request is now live.
+        notify("stream_started", {
+          counterpartyAddress: request.payee,
+          amount: request.deposit.toString(),
+          rate: request.ratePerSecond.toString(),
+          reference: request.invoiceRef || null,
+        });
       } else {
         await counterRequest(request.id, counterRate, counterDeposit, counterStartAt);
+        // Countering sends the payee new terms to accept or decline.
+        notify("counter_offer", {
+          counterpartyAddress: request.payee,
+          amount: counterDeposit.toString(),
+          rate: counterRate.toString(),
+          reference: invoiceRef || null,
+        });
       }
       onSuccess?.();
       onClose();

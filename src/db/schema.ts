@@ -30,6 +30,11 @@ export const users = pgTable(
     // Primary wallet bound to the account (embedded or imported/connected).
     walletAddress: text("wallet_address"),
     email: text("email"),
+    // A notification-only email a wallet-first user opted to add. Unlike `email`
+    // (which mirrors the Privy login identity), this NEVER becomes a login: no
+    // wallet is minted for it and it cannot be used to sign in. Stored lowercase;
+    // guarded so one address is never bound to two accounts.
+    notificationEmail: text("notification_email"),
     displayName: text("display_name"),
     // "employer" | "employee" | null (undecided). Not a security boundary,
     // just which dashboard we land them on.
@@ -42,6 +47,11 @@ export const users = pgTable(
   (t) => ({
     walletIdx: index("users_wallet_idx").on(t.walletAddress),
     usernameIdx: uniqueIndex("users_username_unique").on(t.username),
+    // Nulls stay distinct in Postgres, so unbound accounts don't collide; two
+    // accounts can never hold the same notification email.
+    notificationEmailIdx: uniqueIndex("users_notification_email_unique").on(
+      t.notificationEmail
+    ),
   })
 );
 

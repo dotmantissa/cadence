@@ -5,6 +5,22 @@ import { usePrivy } from "@privy-io/react-auth";
 import type { Payee, StreamDraft, User } from "@/db/schema";
 
 /**
+ * Error thrown by the API client. Carries the HTTP status and, when the server
+ * sent one, a machine-readable `code` so callers can branch on the reason (for
+ * example logging out on `email_bound_elsewhere`) instead of matching strings.
+ */
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/**
  * Thin client for our own /api routes. Every call carries the Privy access
  * token as a bearer, which the server verifies before touching Neon. The token
  * is fetched fresh per call (Privy rotates it), and nothing here ever sees the
@@ -16,7 +32,7 @@ export function useApi() {
   const request = useCallback(
     async <T,>(path: string, init?: RequestInit): Promise<T> => {
       const token = await getAccessToken();
-      if (!token) throw new Error("not authenticated");
+      if (!token) throw new ApiError("not authenticated", 401);
       const res = await fetch(path, {
         ...init,
         headers: {
@@ -27,13 +43,15 @@ export function useApi() {
       });
       if (!res.ok) {
         let message = `request failed (${res.status})`;
+        let code: string | undefined;
         try {
           const j = await res.json();
           if (j?.error) message = j.error;
+          if (j?.code) code = j.code;
         } catch {
           // non-json error body, keep the status message
         }
-        throw new Error(message);
+        throw new ApiError(message, res.status, code);
       }
       if (res.status === 204) return undefined as T;
       return (await res.json()) as T;
@@ -52,6 +70,16 @@ export function useApi() {
         method: "PATCH",
         body: JSON.stringify(patch),
       }),
+
+    /** Bind a notification-only email to the current (wallet) account. */
+    setNotificationEmail: (email: string) =>
+      request<{ user: User }>("/api/me/email", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
+    /** Remove the notification email from the current account. */
+    removeNotificationEmail: () =>
+      request<{ user: User }>("/api/me/email", { method: "DELETE" }),
 
     checkUsername: (u: string) =>
       request<{ available: boolean; reason?: string }>(

@@ -15,6 +15,8 @@ type ProfileValue = {
   loading: boolean;
   setRole: (role: "employer" | "employee") => void;
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
+  authError: string | null;
+  clearAuthError: () => void;
 };
 
 const ProfileContext = createContext<ProfileValue | null>(null);
@@ -39,6 +41,8 @@ export function useProfileContext(): ProfileValue {
       loading: false,
       setRole: () => {},
       setUser: () => {},
+      authError: null,
+      clearAuthError: () => {},
     };
   }
   return ctx;

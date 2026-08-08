@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AtSign, Check, Loader2, Mail, Wallet, X } from "lucide-react";
+import { AtSign, Check, Loader2, Mail, Trash2, Wallet, X } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
 import { Button } from "@/components/Button";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
-import { useApi } from "@/hooks/useApi";
+import { useApi, ApiError } from "@/hooks/useApi";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { validateUsername, USERNAME_MAX, usernameChangeUnlockAt } from "@/lib/username";
 import { shortenAddress } from "@/lib/utils";
@@ -50,7 +50,7 @@ export default function ProfilePage() {
         <div className="mt-10 space-y-8">
           <UsernameField />
           <DisplayNameField />
-          <RoleField />
+          <NotificationEmailField />
           <ReadOnlyIdentity />
         </div>
       </main>
@@ -292,42 +292,141 @@ function DisplayNameField() {
   );
 }
 
-function RoleField() {
-  const { user, setRole } = useProfileContext();
-  const role = user?.role ?? null;
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-  const options: { key: "employer" | "employee"; label: string; sub: string }[] =
-    [
-      { key: "employer", label: "I send payments", sub: "Sign the checks" },
-      { key: "employee", label: "I get paid", sub: "Cash them" },
-    ];
+/**
+ * Notification email for wallet-first users. This never becomes a login: no
+ * wallet is minted for it and you still sign in with your wallet. It only tells
+ * us where to send account emails. Email-login users already have an address on
+ * file (from Privy), so this section hides itself for them.
+ */
+function NotificationEmailField() {
+  const { api } = useApi();
+  const { user, setUser } = useProfileContext();
+
+  const current = user?.notificationEmail ?? "";
+  const [value, setValue] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setValue(user?.notificationEmail ?? "");
+  }, [user?.notificationEmail]);
+
+  // Only wallet-first accounts (no Privy login email) manage an address here.
+  if (!user || user.email) return null;
+
+  const trimmed = value.trim().toLowerCase();
+  const dirty = trimmed !== current;
+  const valid = EMAIL_RE.test(trimmed);
+
+  async function save() {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await api.setNotificationEmail(trimmed);
+      setUser(res.user);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "email_taken") {
+        setError("That email is already linked to another account.");
+      } else if (e instanceof ApiError && e.status === 400) {
+        setError(e.message);
+      } else {
+        setError("Could not save, try again.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setError(null);
+    setRemoving(true);
+    try {
+      const res = await api.removeNotificationEmail();
+      setUser(res.user);
+      setValue("");
+    } catch {
+      setError("Could not remove, try again.");
+    } finally {
+      setRemoving(false);
+    }
+  }
 
   return (
     <section className="rounded-none border border-ink/10 bg-paper-warm p-6">
-      <p className="text-sm font-medium text-ink">Which side are you on?</p>
-      <p className="mt-0.5 text-xs text-ink/45">
-        Just picks your default dashboard. Switch anytime.
-      </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {options.map((o) => {
-          const active = role === o.key;
-          return (
-            <button
-              key={o.key}
-              onClick={() => setRole(o.key)}
-              className={
-                active
-                  ? "rounded-2xl border border-volt bg-volt-wash p-4 text-left"
-                  : "rounded-2xl border border-ink/10 bg-paper p-4 text-left transition-colors hover:border-volt/40"
-              }
-            >
-              <span className="block text-sm font-semibold text-ink">
-                {o.label}
-              </span>
-              <span className="block text-xs text-ink/50">{o.sub}</span>
-            </button>
-          );
-        })}
+      <label className="block">
+        <span className="text-sm font-medium text-ink">Notification email</span>
+        <span className="mt-0.5 block text-xs text-ink/45">
+          Optional. Where we send account updates like sign-ins, payments, and
+          requests. You still sign in with your wallet. We never create a wallet
+          for this address or let it log in.
+        </span>
+        <div className="relative mt-3">
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink/40">
+            <Mail size={16} />
+          </span>
+          <input
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value.slice(0, 254));
+              setError(null);
+            }}
+            type="email"
+            placeholder="you@example.com"
+            autoComplete="email"
+            autoCapitalize="off"
+            spellCheck={false}
+            className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 pl-10 text-sm text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-volt"
+          />
+        </div>
+      </label>
+      <div className="mt-2 min-h-[1.25rem] text-xs">
+        {error && <span className="text-red-500">{error}</span>}
+        {!error && saved && !dirty && (
+          <span className="text-emerald-600">Saved.</span>
+        )}
+        {!error && !saved && current && !dirty && (
+          <span className="text-ink/50">
+            Updates go to <span className="text-ink/70">{current}</span>.
+          </span>
+        )}
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <Button
+          onClick={save}
+          disabled={!dirty || !valid || busy}
+          variant="volt"
+        >
+          {busy ? (
+            <>
+              <Loader2 size={16} className="animate-spin" /> Saving
+            </>
+          ) : current ? (
+            "Update email"
+          ) : (
+            "Add email"
+          )}
+        </Button>
+        {current && (
+          <button
+            type="button"
+            onClick={remove}
+            disabled={removing}
+            className="inline-flex items-center gap-1.5 text-sm text-ink/50 transition-colors hover:text-red-500 disabled:opacity-50"
+          >
+            {removing ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <Trash2 size={15} />
+            )}
+            Remove
+          </button>
+        )}
       </div>
     </section>
   );
@@ -353,17 +452,17 @@ function ReadOnlyIdentity() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-volt-wash text-volt">
-            <Mail size={15} />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs text-ink/45">Email</p>
-            <p className="truncate text-sm text-ink">
-              {user?.email ?? "no email on file"}
-            </p>
+        {user?.email && (
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-volt-wash text-volt">
+              <Mail size={15} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-ink/45">Email</p>
+              <p className="truncate text-sm text-ink">{user.email}</p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </section>
   );

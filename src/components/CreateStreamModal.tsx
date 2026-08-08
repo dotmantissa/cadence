@@ -6,6 +6,7 @@ import { parseUsdc, formatUsdc, shortenAddress } from "@/lib/utils";
 import { useAccount } from "wagmi";
 import { cn } from "@/lib/utils";
 import { useApi } from "@/hooks/useApi";
+import { useNotify } from "@/hooks/useNotify";
 import { validateUsername } from "@/lib/username";
 import { AtSign, Wallet, Check, Loader2, X, Clock, CalendarClock, Users } from "lucide-react";
 import { Modal } from "./Modal";
@@ -30,9 +31,21 @@ const field =
   "w-full rounded-2xl border border-ink/10 bg-paper-warm px-3.5 py-3 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20";
 const labelCls = "mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink/50";
 
+/** A human "starts" line from a unix-seconds bigint, for scheduled streams. */
+function formatStart(startAt: bigint): string {
+  return new Date(Number(startAt) * 1000).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const { address } = useAccount();
   const { api } = useApi();
+  const { notify } = useNotify();
   const [streamMode, setStreamMode] = useState<StreamMode>("single");
 
   // Single-stream state (existing flow)
@@ -215,6 +228,13 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
       }
       setTxStatus("creating");
       await createStream(singleRecipient, ratePerSecond, depositAmount, invoiceRef, startAt);
+      notify("stream_started", {
+        counterpartyAddress: singleRecipient,
+        amount: depositAmount.toString(),
+        rate: ratePerSecond.toString(),
+        reference: invoiceRef || null,
+        starts: startAt > 0n ? formatStart(startAt) : null,
+      });
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
@@ -242,6 +262,20 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
 
     const result = await batchCreate(batchPlan.total, streams);
     if (result.ok) {
+      // One payee email per recipient; the payer gets a single confirmation
+      // (notifySelf only on the first) instead of one per stream.
+      batchPlan.rows
+        .filter((p) => p.ok)
+        .forEach((p, i) => {
+          notify("stream_started", {
+            counterpartyAddress: p.row.walletAddress!,
+            amount: p.deposit.toString(),
+            rate: p.ratePerSecond.toString(),
+            reference: invoiceRef || null,
+            starts: startAt > 0n ? formatStart(startAt) : null,
+            notifySelf: i === 0,
+          });
+        });
       onSuccess?.();
       onClose();
     }

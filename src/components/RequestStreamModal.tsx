@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRequestActions } from "@/hooks/usePayroll";
 import { parseUsdc, formatUsdc, shortenAddress, cn } from "@/lib/utils";
 import { useApi } from "@/hooks/useApi";
+import { useNotify } from "@/hooks/useNotify";
 import { validateUsername } from "@/lib/username";
 import { AtSign, Wallet, Check, Loader2, X, Clock, CalendarClock } from "lucide-react";
 import { Modal } from "./Modal";
@@ -20,6 +21,17 @@ const field =
   "w-full rounded-2xl border border-ink/10 bg-paper-warm px-3.5 py-3 text-sm text-ink placeholder-ink/30 transition-colors focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/20";
 const labelCls = "mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink/50";
 
+/** A human "starts" line from a unix-seconds bigint, for scheduled requests. */
+function formatStart(startAt: bigint): string {
+  return new Date(Number(startAt) * 1000).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 /**
  * The payee side of negotiation: ask someone to open a stream that pays *you*.
  * No funds move here — the request is a proposal the payer later funds (accept)
@@ -28,6 +40,7 @@ const labelCls = "mb-1.5 block text-xs font-medium uppercase tracking-wide text-
  */
 export function RequestStreamModal({ onClose, onSuccess }: Props) {
   const { api } = useApi();
+  const { notify } = useNotify();
   const [mode, setMode] = useState<Mode>("username");
   const [payer, setPayer] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
@@ -174,6 +187,14 @@ export function RequestStreamModal({ onClose, onSuccess }: Props) {
     setSubmitting(true);
     try {
       await requestStream(recipient, ratePerSecond, depositAmount, invoiceRef, startAt);
+      // The caller is the payee asking; notify the payer they have a request.
+      notify("request_received", {
+        counterpartyAddress: recipient,
+        amount: depositAmount.toString(),
+        rate: ratePerSecond.toString(),
+        reference: invoiceRef || null,
+        starts: startAt > 0n ? formatStart(startAt) : null,
+      });
       onSuccess?.();
       onClose();
     } catch (err: unknown) {

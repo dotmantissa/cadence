@@ -25,14 +25,14 @@ const display = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Cadence // salary that streams",
+  title: "Cadence // payments that stream",
   description:
-    "Payroll that moves every second. Deposit USDC once, your team earns in real time on Arc and cashes out whenever they feel like it.",
+    "Payments that move every second. Deposit USDC once, the people you pay earn in real time on Arc and cash out whenever they feel like it.",
   icons: { icon: "/logo.svg", shortcut: "/logo.svg" },
   openGraph: {
-    title: "Cadence // salary that streams",
+    title: "Cadence // payments that stream",
     description:
-      "Deposit once. Your team earns by the second on Arc. Withdraw anytime, settles in about 350ms.",
+      "Deposit once. The people you pay earn by the second on Arc. Withdraw anytime, settles in about 350ms.",
     type: "website",
   },
 };

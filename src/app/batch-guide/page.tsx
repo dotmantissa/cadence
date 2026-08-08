@@ -12,7 +12,7 @@ export default function BatchGuidePage() {
             href="/payer"
             className="inline-flex items-center gap-1.5 text-sm text-volt transition-colors hover:text-volt-bright"
           >
-            ← Back to payroll
+            ← Back to payments
           </Link>
         </div>
 
@@ -236,7 +236,7 @@ export default function BatchGuidePage() {
               href="/payer"
               className="inline-flex items-center gap-1.5 text-sm font-medium text-volt transition-colors hover:text-volt-bright"
             >
-              ← Back to payroll
+              ← Back to payments
             </Link>
           </div>
         </div>

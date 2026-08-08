@@ -28,8 +28,8 @@ import {
  * in its TEE and binds it to the account. Cadence never sees or stores the key.
  */
 export function WalletOnboarding() {
-  const { ready, authenticated } = usePrivy();
-  const { wallets } = useWallets();
+  const { ready, authenticated, user } = usePrivy();
+  const { wallets, ready: walletsReady } = useWallets();
   const { createWallet } = useCreateWallet();
   const { importWallet } = useImportWallet();
   const { logout } = useLogout();
@@ -40,7 +40,22 @@ export function WalletOnboarding() {
   const [reveal, setReveal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const show = ready && authenticated && wallets.length === 0;
+  // The modal must only appear for a genuinely wallet-less account. Two async
+  // sources have to settle first, or it flashes with live buttons and a stray
+  // click starts a real import/create flow:
+  //   1. useWallets() hydrates its list after Privy is `ready` — gate on its
+  //      own `ready` flag, not just usePrivy's.
+  //   2. A returning user already has a wallet on `user.linkedAccounts` even
+  //      before the live connector reconnects. Trust that record too.
+  const hasLinkedWallet =
+    user?.linkedAccounts?.some((a) => a.type === "wallet") ?? false;
+
+  const show =
+    ready &&
+    authenticated &&
+    walletsReady &&
+    wallets.length === 0 &&
+    !hasLinkedWallet;
 
   async function handleCreate() {
     setError(null);

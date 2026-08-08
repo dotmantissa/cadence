@@ -9,13 +9,13 @@ const steps = [
     n: "01",
     icon: Wallet,
     title: "Fund it once",
-    body: "Approve USDC, drop in a lump sum, and set a rate for each person. That is the entire setup. No spreadsheets harmed.",
+    body: "Approve USDC, drop in a lump sum, and set a rate for each person. Done. The stream takes it from there.",
   },
   {
     n: "02",
     icon: Waves,
     title: "Let it stream",
-    body: "The contract pays out every second, live. Your team watches their balance tick up in real time instead of refreshing a bank app.",
+    body: "The contract pays out every second, live. Whoever you pay watches their balance tick up in real time instead of refreshing a bank app.",
   },
   {
     n: "03",
@@ -59,24 +59,30 @@ export function HowItFlows() {
           return (
             <motion.div
               key={s.n}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 40, scale: 0.96 }}
+              whileInView={{ opacity: 1, y: 0, scale: 1 }}
               viewport={{ once: true, amount: 0.4 }}
-              transition={{ delay: i * 0.1, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className={`group relative overflow-hidden rounded-none border border-ink/10 bg-paper p-8 transition-colors hover:border-ink/20 ${meetingCorner}`}
+              transition={{ delay: i * 0.1, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+              whileHover={{ y: -8, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } }}
+              className={`group relative overflow-hidden rounded-none border border-ink/10 bg-paper p-8 transition-[border-color,box-shadow] duration-500 hover:border-volt/30 hover:shadow-[0_30px_80px_-40px_rgba(43,68,231,0.5)] ${meetingCorner}`}
             >
-              <div className="flex items-start justify-between">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-volt-wash text-volt transition-transform duration-500 ease-springy group-hover:scale-110">
+              {/* glow that blooms from the corner on hover */}
+              <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-volt/10 opacity-0 blur-3xl transition-all duration-700 ease-liquid group-hover:scale-125 group-hover:opacity-100" />
+              {/* diagonal sheen that sweeps across on hover */}
+              <div className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-volt/[0.07] to-transparent transition-transform duration-1000 ease-liquid group-hover:translate-x-full" />
+
+              <div className="relative flex items-start justify-between">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-volt-wash text-volt transition-transform duration-500 ease-springy group-hover:-rotate-6 group-hover:scale-110">
                   <Icon size={24} />
                 </div>
-                <span className="font-mono text-5xl font-bold text-black/[0.06] transition-colors group-hover:text-volt/10">
+                <span className="font-mono text-5xl font-bold text-black/[0.06] transition-all duration-500 ease-springy group-hover:scale-110 group-hover:text-volt/15">
                   {s.n}
                 </span>
               </div>
-              <h3 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
+              <h3 className="relative mt-6 text-2xl font-semibold tracking-tight text-ink">
                 {s.title}
               </h3>
-              <p className="mt-3 max-w-md text-sm leading-relaxed text-ink/55">
+              <p className="relative mt-3 max-w-md text-sm leading-relaxed text-ink/55">
                 {s.body}
               </p>
             </motion.div>

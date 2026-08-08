@@ -9,7 +9,7 @@ const sides = [
     href: "/payer",
     tag: "for the ones paying",
     icon: Building2,
-    title: "Run payroll that never clocks out",
+    title: "Run payments that never clock out",
     body: "Fund a stream, set the rate, watch your runway. Top up when you are flush, cancel when you are not. Your treasury, your rules.",
     cta: "Start paying",
     tone: "ink" as const,
@@ -19,7 +19,7 @@ const sides = [
     tag: "for the ones earning",
     icon: User,
     title: "Watch your bag grow in real time",
-    body: "Your salary shows up by the second, not by the month. Withdraw whenever the mood strikes and skip the wait entirely.",
+    body: "Your money shows up by the second, not by the month. Withdraw whenever the mood strikes and skip the wait entirely.",
     cta: "See my earnings",
     tone: "volt" as const,
   },
@@ -38,24 +38,31 @@ export function AudienceSplit() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, amount: 0.3 }}
             transition={{ delay: i * 0.12, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            whileHover={{ y: -8, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } }}
           >
             <Link href={s.href} className="group block h-full">
               <div
-                className={`relative flex h-full flex-col overflow-hidden rounded-none p-9 transition-all duration-500 ease-liquid sm:p-11 ${
+                className={`relative flex h-full flex-col overflow-hidden rounded-none p-9 transition-shadow duration-500 ease-liquid sm:p-11 ${
                   dark
-                    ? "bg-panel text-panel-foreground"
-                    : "bg-volt text-panel-foreground"
+                    ? "bg-panel text-panel-foreground group-hover:shadow-[0_40px_110px_-40px_rgba(43,68,231,0.6)]"
+                    : "bg-volt text-panel-foreground group-hover:shadow-[0_40px_110px_-40px_rgba(43,68,231,0.55)]"
                 }`}
               >
                 {/* moving glow */}
                 <div
-                  className={`pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full blur-3xl transition-transform duration-700 ease-liquid group-hover:scale-125 ${
+                  className={`pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full blur-3xl transition-transform duration-700 ease-liquid group-hover:scale-150 ${
                     dark ? "bg-volt/30" : "bg-white/20"
+                  }`}
+                />
+                {/* diagonal sheen that sweeps across on hover */}
+                <div
+                  className={`pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent to-transparent transition-transform duration-[1100ms] ease-liquid group-hover:translate-x-full ${
+                    dark ? "via-white/[0.06]" : "via-white/[0.12]"
                   }`}
                 />
                 <div className="relative flex items-center gap-3">
                   <div
-                    className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
+                    className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-transform duration-500 ease-springy group-hover:-rotate-6 group-hover:scale-110 ${
                       dark ? "bg-white/10 text-volt-bright" : "bg-white/15 text-white"
                     }`}
                   >

@@ -38,7 +38,7 @@ export default function Home() {
                 transition={{ delay: 0.08, duration: 0.7, ease }}
                 className="mt-6 text-5xl font-semibold leading-[0.95] tracking-tightest text-ink sm:text-6xl lg:text-[4.5rem]"
               >
-                Payroll that moves{" "}
+                Payments that move{" "}
                 <span className="volt-text font-display italic">
                   while you read this
                 </span>
@@ -50,9 +50,9 @@ export default function Home() {
                 transition={{ delay: 0.16, duration: 0.7, ease }}
                 className="mt-6 max-w-md text-lg leading-relaxed text-ink/60"
               >
-                Fund a stream once and your team earns by the second. They watch
-                the balance climb and cash out whenever they want, no pay run and
-                no one holding the money but the contract.
+                Fund a stream once and whoever you pay earns by the second. They
+                watch the balance climb and cash out whenever they want, no pay
+                run and no one holding the money but the contract.
               </motion.p>
 
               <motion.div
@@ -62,7 +62,7 @@ export default function Home() {
                 className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center"
               >
                 <Button href="/payer" variant="volt">
-                  Start paying your team
+                  Start streaming payments
                   <ArrowRight size={16} />
                 </Button>
                 <Button href="/payee" variant="ghost">
@@ -70,18 +70,6 @@ export default function Home() {
                 </Button>
               </motion.div>
 
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4, duration: 0.8 }}
-                className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-2 font-mono text-sm text-ink/40"
-              >
-                <span>gas paid in USDC</span>
-                <span className="h-1 w-1 rounded-full bg-ink/20" />
-                <span>withdraw anytime</span>
-                <span className="h-1 w-1 rounded-full bg-ink/20" />
-                <span>keys stay yours</span>
-              </motion.div>
             </div>
 
             <motion.div

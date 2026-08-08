@@ -11,8 +11,8 @@ export function Footer() {
           <div>
             <Logo tone="paper" />
             <p className="mt-5 max-w-xs text-sm leading-relaxed text-panel-foreground/50">
-              Real-time payroll on Arc. Deposit once, pay by the second, and let
-              your team cash out on their own schedule.
+              Real-time payments on Arc. Deposit once, pay by the second, and let
+              anyone you pay cash out on their own schedule.
             </p>
           </div>
 
@@ -60,6 +60,19 @@ export function Footer() {
                     <path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.7.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z" />
                   </svg>
                   GitHub
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://x.com/cadenceonarc"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-panel-foreground/70 transition-colors hover:text-panel-foreground"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  X
                 </a>
               </li>
             </ul>

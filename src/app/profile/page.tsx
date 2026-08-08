@@ -298,7 +298,7 @@ function RoleField() {
 
   const options: { key: "employer" | "employee"; label: string; sub: string }[] =
     [
-      { key: "employer", label: "I pay a team", sub: "Sign the checks" },
+      { key: "employer", label: "I send payments", sub: "Sign the checks" },
       { key: "employee", label: "I get paid", sub: "Cash them" },
     ];
 

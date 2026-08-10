@@ -226,12 +226,14 @@ export function useUsdcAllowance(owner: `0x${string}` | undefined) {
 }
 
 export function useWithdraw() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
   const publicClient = usePublicClient();
   const { address } = useAccount();
 
   return {
+    // Async-returning so the caller can await the hash, confirm the receipt, and
+    // only then fire the "you cashed out" email (never on a rejected tx).
     withdraw: async (streamId: bigint) => {
       const gas = await dynamicGas(publicClient, address, {
         address: PAYROLL_ADDRESS,
@@ -239,7 +241,7 @@ export function useWithdraw() {
         functionName: "withdraw",
         args: [streamId],
       });
-      return writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "withdraw", args: [streamId], ...gas, ...ARC_FEE });
+      return writeContractAsync({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "withdraw", args: [streamId], ...gas, ...ARC_FEE });
     },
     isPending,
     isConfirming,
@@ -250,12 +252,14 @@ export function useWithdraw() {
 }
 
 export function useTopUp() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
   const publicClient = usePublicClient();
   const { address } = useAccount();
 
   return {
+    // Async-returning so the caller can await the hash, confirm the receipt, read
+    // the (possibly raised) new rate back, and then fire the top-up email.
     topUp: async (streamId: bigint, amount: bigint) => {
       const gas = await dynamicGas(publicClient, address, {
         address: PAYROLL_ADDRESS,
@@ -263,7 +267,7 @@ export function useTopUp() {
         functionName: "topUp",
         args: [streamId, amount],
       });
-      return writeContract({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "topUp", args: [streamId, amount], ...gas, ...ARC_FEE });
+      return writeContractAsync({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "topUp", args: [streamId, amount], ...gas, ...ARC_FEE });
     },
     isPending,
     isConfirming,

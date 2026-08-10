@@ -103,6 +103,141 @@ contract PayrollManagerTest is Test {
         assertTrue(activeAfter);
     }
 
+    /// Reads just the per-second rate (tuple index 2).
+    function _rate(uint256 id) internal view returns (uint128 rate) {
+        (, , uint128 r, , , , , , ,) = payroll.streams(id);
+        return r;
+    }
+
+    /// A top-up on a RUNNING stream must raise the rate and hold the finish
+    /// time fixed, rather than pushing the end date out. Here we top up
+    /// halfway through a 3600s stream with enough to double the flow.
+    function test_TopUp_RunningRaisesRatePreservesFinish() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+        uint256 finishAt = block.timestamp + 3600; // original end
+
+        // 600s in: $600 owed, $3000 unstreamed, 3000s of runway remaining.
+        vm.warp(block.timestamp + 600);
+        assertEq(payroll.accrued(id), 600e6);
+        assertEq(payroll.runway(id), 3000);
+
+        // Top up $3000 → new flow spreads (3000 + 3000) over the SAME 3000s = $2/s.
+        usdc.mint(employer, 3000e6);
+        vm.prank(employer);
+        usdc.approve(address(payroll), 3000e6);
+        vm.prank(employer);
+        payroll.topUp(id, 3000e6);
+
+        assertEq(_rate(id), 2e6); // rate doubled
+        assertEq(payroll.runway(id), 3000); // finish time held — still 3000s out
+        assertEq(payroll.accrued(id), 600e6); // already-owed amount unchanged
+
+        // The stream drains to exactly zero at the ORIGINAL finish, not later.
+        vm.warp(finishAt);
+        assertEq(payroll.accrued(id), 6600e6); // whole $6600 deposit now owed
+        assertEq(payroll.runway(id), 0);
+    }
+
+    /// The employee's claimable balance must be continuous across a rate-raising
+    /// top-up: what was owed the instant before equals what's owed the instant
+    /// after, and a withdraw right after pays exactly the pre-top-up figure.
+    function test_TopUp_RunningPreservesOwedForClaim() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        vm.warp(block.timestamp + 900); // $900 owed, 2700s runway left
+        assertEq(payroll.accrued(id), 900e6);
+
+        // Double the unstreamed money ($2700) over the SAME runway → rate 2/s,
+        // which divides the owed $900 cleanly so there's no rounding to reason
+        // about here (the dust case is covered separately below).
+        usdc.mint(employer, 2700e6);
+        vm.prank(employer);
+        usdc.approve(address(payroll), 2700e6);
+        vm.prank(employer);
+        payroll.topUp(id, 2700e6);
+
+        assertEq(_rate(id), 2e6);
+        // Owed is unchanged the instant after the top-up...
+        assertEq(payroll.accrued(id), 900e6);
+        // ...and the employee can claim exactly that, no more, no less.
+        vm.prank(employee);
+        payroll.withdraw(id);
+        assertEq(usdc.balanceOf(employee), 900e6);
+    }
+
+    /// When the new rate doesn't divide the already-owed amount evenly, the
+    /// integer re-anchoring of the claim clock can only lose SUB-SECOND dust,
+    /// and always in the employer's favour (the contract never over-pays the
+    /// past out of the fresh deposit). Bound it: the owed amount drops by less
+    /// than one second of the new rate, and never rises.
+    function test_TopUp_RunningDustBoundedInEmployerFavour() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        vm.warp(block.timestamp + 900);
+        uint128 owedBefore = payroll.accrued(id);
+        assertEq(owedBefore, 900e6);
+
+        // $5000 over 2700s → 2.851…/s, which does NOT divide $900 evenly.
+        usdc.mint(employer, 5000e6);
+        vm.prank(employer);
+        usdc.approve(address(payroll), 5000e6);
+        vm.prank(employer);
+        payroll.topUp(id, 5000e6);
+
+        uint128 newRate = _rate(id);
+        uint128 owedAfter = payroll.accrued(id);
+        assertLe(owedAfter, owedBefore); // never over-pays the past
+        assertLt(owedBefore - owedAfter, newRate); // loss < 1s of the new rate
+    }
+
+    /// A top-up on a SCHEDULED (not-yet-started) stream is purely additive: the
+    /// rate and start are untouched and the extra funds extend the runway past
+    /// the original end. Re-anchoring here would corrupt the schedule.
+    function test_TopUp_ScheduledIsAdditive() public {
+        uint64 start = uint64(block.timestamp + 1 days);
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", start);
+
+        vm.warp(block.timestamp + 1 hours); // still before start
+        usdc.mint(employer, DEPOSIT);
+        vm.prank(employer);
+        usdc.approve(address(payroll), DEPOSIT);
+        vm.prank(employer);
+        payroll.topUp(id, DEPOSIT);
+
+        assertEq(_rate(id), RATE); // rate untouched
+        (, , , uint64 startTime, , uint128 deposit, , , ,) = payroll.streams(id);
+        assertEq(startTime, start); // start untouched
+        assertEq(deposit, DEPOSIT * 2); // both deposits present
+        // Runway now spans the doubled deposit (extends past the original end).
+        assertEq(payroll.runway(id), (DEPOSIT * 2) / RATE);
+    }
+
+    /// A top-up on a fully-accrued-but-unclaimed stream (zero remaining runway)
+    /// can't preserve a finish that has already arrived, so it keeps the old
+    /// rate and simply gives the stream fresh runway from now.
+    function test_TopUp_FullyAccruedKeepsRateAddsRunway() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        vm.warp(block.timestamp + 3600); // fully accrued, runway 0, not yet claimed
+        assertEq(payroll.accrued(id), DEPOSIT);
+        assertEq(payroll.runway(id), 0);
+
+        usdc.mint(employer, DEPOSIT);
+        vm.prank(employer);
+        usdc.approve(address(payroll), DEPOSIT);
+        vm.prank(employer);
+        payroll.topUp(id, DEPOSIT);
+
+        assertEq(_rate(id), RATE); // rate unchanged — nothing to spread
+        assertEq(payroll.accrued(id), DEPOSIT); // the owed $3600 is still owed
+        assertEq(payroll.runway(id), 3600); // fresh runway on the new funds
+    }
+
     function test_CancelStream() public {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", 0);

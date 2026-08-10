@@ -25,7 +25,10 @@ import {
   ReqStatus,
 } from "@/hooks/usePayroll";
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
+import { useNotify } from "@/hooks/useNotify";
+import { streamMath } from "@/lib/stream-math";
 import { formatUsdc } from "@/lib/utils";
+import type { StreamMeta } from "@/hooks/usePayroll";
 
 export default function EmployerPage() {
   const { address, connected } = useActiveAddress();
@@ -33,6 +36,7 @@ export default function EmployerPage() {
   const { data: ids, isLoading: loadingIds, refetch } = useEmployerStreams(address);
   const { data: balance } = useUsdcBalance(address);
   const { cancel } = useCancelStream();
+  const { notify } = useNotify();
   const [hideBalance, toggleBalance] = useBalancePrivacy();
 
   // Stream IDs the user just cancelled, held until the refetch confirms the
@@ -41,34 +45,9 @@ export default function EmployerPage() {
   // until the next 5s poll (or a manual refresh) happens to catch the change.
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
 
-  const handleCancel = useCallback(
-    async (id: bigint) => {
-      const key = id.toString();
-      try {
-        // Awaits the wallet confirmation; only freeze once the tx is actually
-        // submitted, so a rejected cancel leaves the live card untouched.
-        const hash = await cancel(id);
-        setCancellingIds((prev) => new Set(prev).add(key));
-        await waitForTransactionReceipt(config, { hash });
-        await refetch();
-      } catch {
-        // Wallet rejected or the tx failed — nothing to freeze.
-      } finally {
-        // Fresh data (post-refetch) already carries the cancelled state, so it's
-        // safe to drop the optimistic override without the card resuming ticking.
-        setCancellingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(key);
-          return next;
-        });
-      }
-    },
-    [cancel, config, refetch]
-  );
-
   const [view, setView] = useState<"streams" | "requests">("streams");
   const [showCreate, setShowCreate] = useState(false);
-  const [topUpStreamId, setTopUpStreamId] = useState<bigint | null>(null);
+  const [topUpStream, setTopUpStream] = useState<StreamMeta | null>(null);
 
   // Newest-first, decoded once for both the counts and the collection.
   const ordered = useMemo(() => (ids ? [...ids].reverse() : []), [ids]);
@@ -88,6 +67,50 @@ export default function EmployerPage() {
             cancellingIds.has(s.id.toString()) ? { ...s, active: false, deposit: 0n } : s
           ),
     [streams, cancellingIds]
+  );
+
+  const handleCancel = useCallback(
+    async (id: bigint) => {
+      const key = id.toString();
+      // Snapshot the live figures before the cancel zeroes the escrow: what has
+      // already streamed to the payee (they keep it) and what refunds to us.
+      const stream: StreamMeta | undefined = streams.find((s) => s.id === id);
+      let streamed: string | null = null;
+      let refund: string | null = null;
+      if (stream) {
+        const m = streamMath(stream);
+        streamed = m.streamedSoFar.toString();
+        refund = m.remaining.toString();
+      }
+      try {
+        // Awaits the wallet confirmation; only freeze once the tx is actually
+        // submitted, so a rejected cancel leaves the live card untouched.
+        const hash = await cancel(id);
+        setCancellingIds((prev) => new Set(prev).add(key));
+        await waitForTransactionReceipt(config, { hash });
+        await refetch();
+        // Tell both sides once the refund has settled on-chain.
+        if (stream) {
+          notify("stream_cancelled", {
+            counterpartyAddress: stream.employee,
+            streamed,
+            refund,
+            reference: stream.invoiceRef || null,
+          });
+        }
+      } catch {
+        // Wallet rejected or the tx failed — nothing to freeze.
+      } finally {
+        // Fresh data (post-refetch) already carries the cancelled state, so it's
+        // safe to drop the optimistic override without the card resuming ticking.
+        setCancellingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+    },
+    [streams, cancel, config, refetch, notify]
   );
 
   // Requests addressed to this wallet (it is the payer), newest-first.
@@ -211,7 +234,7 @@ export default function EmployerPage() {
             perspective="employer"
             loading={loadingStreams}
             onCancel={handleCancel}
-            onTopUp={(id) => setTopUpStreamId(id)}
+            onTopUp={(id) => setTopUpStream(streams.find((s) => s.id === id) ?? null)}
             emptyState={
               <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
                 <p className="text-ink/60">No streams yet. The team is waiting.</p>
@@ -252,11 +275,11 @@ export default function EmployerPage() {
         />
       )}
 
-      {topUpStreamId !== null && (
+      {topUpStream !== null && (
         <TopUpModal
-          streamId={topUpStreamId}
+          stream={topUpStream}
           onClose={() => {
-            setTopUpStreamId(null);
+            setTopUpStream(null);
             refetch();
           }}
         />

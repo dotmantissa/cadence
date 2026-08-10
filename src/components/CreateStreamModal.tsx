@@ -52,7 +52,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const [singleMode, setSingleMode] = useState<SingleRecipientMode>("address");
   const [employee, setEmployee] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
-  const [streamDays, setStreamDays] = useState("30");
+  const [streamDays, setStreamDays] = useState("");
   const [invoiceRef, setInvoiceRef] = useState("");
   const [startMode, setStartMode] = useState<"now" | "schedule">("now");
   const [startAtLocal, setStartAtLocal] = useState("");
@@ -86,10 +86,18 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const { batchCreate, progress, running, error: batchError, reset: resetBatch } = useBatchCreateStreams();
 
   // ---- Single-stream math & validation ----
-  const days = Math.max(1, parseInt(streamDays) || 30);
+  // No silent default: the duration must be typed. `days` is only clamped to a
+  // safe positive integer for the rate math; submission is gated on `daysEntered`
+  // so a blank/zero duration can't sneak through as "30".
+  const parsedDays = parseInt(streamDays);
+  const daysEntered = streamDays.trim() !== "" && Number.isFinite(parsedDays) && parsedDays >= 1;
+  const days = daysEntered ? parsedDays : 1;
   const depositAmount = parseUsdc(totalAmount);
   const dailyRateRaw = depositAmount > 0n ? depositAmount / BigInt(days) : 0n;
   const ratePerSecond = dailyRateRaw / 86400n;
+  // Deposit is real and duration is set, but it floors to nothing per second —
+  // i.e. the amount is too small to actually stream over the window entered.
+  const amountTooSmall = daysEntered && depositAmount > 0n && ratePerSecond === 0n;
 
   const scheduledMs = startMode === "schedule" && startAtLocal ? new Date(startAtLocal).getTime() : NaN;
   const scheduledInvalid = startMode === "schedule" && (!startAtLocal || isNaN(scheduledMs) || scheduledMs <= Date.now());
@@ -112,6 +120,14 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         ? (trimmed as `0x${string}`)
         : null
       : resolved?.walletAddress ?? null;
+
+  // A stream to your own wallet is a no-op that just locks your funds behind the
+  // rate clock, so block it. Compares the resolved recipient (address or handle)
+  // against the connected wallet, case-insensitively.
+  const isSelfStream =
+    !!singleRecipient &&
+    !!address &&
+    singleRecipient.toLowerCase() === address.toLowerCase();
 
   // ---- Batch-stream math & validation ----
   const batchPlan = planBatch(allocationMode, recipients, sharedAmount, days, balance);
@@ -208,16 +224,19 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const isPending = txStatus !== "idle" || running;
   const canSubmitSingle =
     singleRecipient !== null &&
+    !isSelfStream &&
+    daysEntered &&
     depositAmount > 0n &&
     ratePerSecond > 0n &&
     !insufficientBalance &&
     !scheduledInvalid;
 
-  const canSubmitBatch = batchPlan.canSubmit;
+  const canSubmitBatch = batchPlan.canSubmit && daysEntered;
 
   async function handleSubmitSingle(e: React.FormEvent) {
     e.preventDefault();
-    if (!singleRecipient) return;
+    if (!singleRecipient || isSelfStream) return;
+    if (!daysEntered) return;
     if (depositAmount === 0n || ratePerSecond === 0n) return;
 
     setTxError(null);
@@ -426,6 +445,12 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
               )}
             </div>
 
+            {isSelfStream && (
+              <p className="rounded-2xl border border-red-500/20 bg-red-500/5 px-3.5 py-2.5 text-xs text-red-500">
+                You can&apos;t open a stream to your own wallet. Pick a different recipient.
+              </p>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Total (USDC)</label>
@@ -470,8 +495,15 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                   value={streamDays}
                   disabled={isPending}
                   onChange={(e) => setStreamDays(e.target.value)}
+                  placeholder="e.g. 30"
                   className={field}
                 />
+                {amountTooSmall && (
+                  <p className="mt-1.5 text-xs text-red-500">
+                    Too small to stream over {days} {days === 1 ? "day" : "days"} — the rate rounds
+                    down to nothing. Raise the amount or shorten the duration.
+                  </p>
+                )}
               </div>
             </div>
           </>
@@ -498,6 +530,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                 value={streamDays}
                 disabled={isPending}
                 onChange={(e) => setStreamDays(e.target.value)}
+                placeholder="e.g. 30"
                 className={field}
               />
             </div>
@@ -556,8 +589,9 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
           )}
         </div>
 
-        {/* Rate preview (single only) */}
-        {streamMode === "single" && depositAmount > 0n && (
+        {/* Rate preview (single only). Needs a real duration — with the days
+            field blank the derived rate is meaningless, so hold the preview. */}
+        {streamMode === "single" && depositAmount > 0n && daysEntered && !amountTooSmall && (
           <div className="space-y-2 rounded-2xl border border-volt/15 bg-volt/[0.06] px-4 py-3">
             <div className="flex justify-between text-sm">
               <span className="text-ink/55">Streams at</span>

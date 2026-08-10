@@ -257,20 +257,78 @@ contract PayrollManager is ReentrancyGuard {
     }
 
     /// @notice Employer adds more USDC to an existing stream.
+    ///
+    /// @dev Behaviour depends on the stream's phase:
+    ///
+    ///  - **Running** (active and past its start): the finish time is held FIXED
+    ///    and the rate is RAISED so the added funds are spread over the runway
+    ///    that remains, instead of pushing the end date out. The already-accrued
+    ///    (but unclaimed) amount is preserved by re-anchoring the claim clock:
+    ///    we pick `lastClaimTime` so that `(now - lastClaimTime) * newRate` equals
+    ///    what was already owed. Because the rate only ever goes UP, that anchor
+    ///    stays at or after `startTime` and cannot underflow.
+    ///
+    ///  - **Scheduled** (active but not yet started): additive — the deposit
+    ///    grows and the rate/start are untouched, so the extra funds simply
+    ///    extend the runway past the original end. Re-anchoring here would break
+    ///    the schedule, so we deliberately don't touch the rate before a stream
+    ///    has begun.
+    ///
+    ///  - **Drained/inactive**: reactivates and restarts the accrual clock from
+    ///    now, so the idle gap is never retroactively owed (unchanged behaviour).
     function topUp(uint256 streamId, uint128 amount) external nonReentrant {
         Stream storage s = streams[streamId];
         require(msg.sender == s.employer, "not employer");
         require(amount > 0, "amount must be > 0");
 
         usdc.transferFrom(msg.sender, address(this), amount);
-        s.deposit += amount;
-        s.totalDeposited += amount;
 
-        // Reactivating a drained stream restarts its accrual clock from now, so
-        // the gap while it sat empty is never retroactively owed.
-        if (!s.active && s.deposit >= s.ratePerSecond) {
-            s.active = true;
-            s.lastClaimTime = uint64(block.timestamp);
+        uint64 nowT = uint64(block.timestamp);
+
+        if (s.active && nowT > s.startTime) {
+            // ---- Running stream: preserve finish time, raise the rate --------
+            uint128 owed = _accrued(s); // already streamed, not yet claimed (≤ deposit)
+            uint128 unstreamed = s.deposit - owed; // future money, before this top-up
+
+            // Runway (seconds) left at the current rate — same formula as runway().
+            uint256 remainingRunway =
+                s.ratePerSecond > 0 ? uint256(unstreamed) / s.ratePerSecond : 0;
+
+            uint128 newRate;
+            if (remainingRunway > 0) {
+                // Spread (unstreamed + amount) across the SAME remaining seconds.
+                // Since amount > 0 this is strictly greater than the old rate.
+                uint256 r = (uint256(unstreamed) + amount) / remainingRunway;
+                newRate = r > type(uint128).max ? type(uint128).max : uint128(r);
+                if (newRate == 0) newRate = s.ratePerSecond; // defensive; can't hit
+            } else {
+                // No runway to preserve (sub-second remainder, or fully accrued
+                // and awaiting a claim): keep the rate; the new funds add runway.
+                newRate = s.ratePerSecond;
+            }
+
+            s.deposit += amount;
+            s.totalDeposited += amount;
+            s.ratePerSecond = newRate;
+
+            // Re-anchor the accrual clock so the already-owed amount is unchanged
+            // under the new rate. `backdate = owed / newRate` seconds of the new
+            // rate reproduce `owed` (± sub-second dust in the employer's favour).
+            // backdate ≤ (now - oldLastClaimTime) because newRate ≥ oldRate, so
+            // this never underflows and never predates startTime.
+            uint256 backdate = uint256(owed) / newRate;
+            s.lastClaimTime = nowT - uint64(backdate);
+        } else {
+            // ---- Scheduled, or drained/inactive: simple additive top-up ------
+            s.deposit += amount;
+            s.totalDeposited += amount;
+
+            // Reactivating a drained stream restarts its accrual clock from now,
+            // so the gap while it sat empty is never retroactively owed.
+            if (!s.active && s.deposit >= s.ratePerSecond) {
+                s.active = true;
+                s.lastClaimTime = nowT;
+            }
         }
 
         emit StreamToppedUp(streamId, msg.sender, amount);

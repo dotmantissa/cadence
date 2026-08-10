@@ -3,16 +3,26 @@ import { requireUser, badRequest } from "../_auth";
 import { getNotifiableByAddress } from "@/db/queries";
 import type { User } from "@/db/schema";
 import { formatUsdc, rateToDaily, shortenAddress } from "@/lib/utils";
+import { notificationEnabled, type NotificationCategory } from "@/lib/notifications";
 import {
   sendEmail,
   welcomeEmail,
   signinEmail,
   streamStartedPayerEmail,
   streamStartedPayeeEmail,
+  streamActivatedPayerEmail,
+  streamActivatedPayeeEmail,
+  streamClaimedPayerEmail,
+  streamClaimedPayeeEmail,
+  streamToppedUpPayerEmail,
+  streamToppedUpPayeeEmail,
+  streamCancelledPayerEmail,
+  streamCancelledPayeeEmail,
   requestReceivedEmail,
   counterOfferEmail,
   receiptEmail,
   emailEnabled,
+  type EmailContent,
 } from "@/lib/email";
 
 // Auth relies on runtime headers, so this is always dynamic.
@@ -27,7 +37,12 @@ export const dynamic = "force-dynamic";
  * fails the request, since the on-chain action already happened.
  */
 
-type Party = { email: string | null; username: string | null; displayName: string | null };
+type Party = {
+  email: string | null;
+  username: string | null;
+  displayName: string | null;
+  settings: Record<string, unknown> | null;
+};
 
 /** How a person is shown to the other side: @handle, then name, then address. */
 function label(p: { username: string | null; displayName: string | null }, address: string): string {
@@ -46,7 +61,23 @@ function selfParty(user: User): Party {
     email: user.email ?? user.notificationEmail,
     username: user.username,
     displayName: user.displayName,
+    settings: user.settings ?? null,
   };
+}
+
+/**
+ * Send to one party only if they have an email and haven't switched this
+ * category off. Every category defaults to on, so an account that never touched
+ * the toggles still gets mail. Best-effort: a delivery failure is swallowed.
+ */
+async function send(
+  party: Party | null,
+  category: NotificationCategory,
+  content: EmailContent
+): Promise<void> {
+  if (!party?.email) return;
+  if (!notificationEnabled(party.settings, category)) return;
+  await sendEmail(party.email, content);
 }
 
 /** "$1,200.00" from a base-unit string, or null if it doesn't parse. */
@@ -152,70 +183,122 @@ export async function POST(req: Request) {
     starts,
   };
 
+  // Names for the greeting line on each side's copy.
+  const selfName = greetName(self);
+  const counterName = counter ? greetName(counter) : null;
+  // The same stream, described from the counterparty's point of view: to them,
+  // the "other party" is the caller.
+  const factsToCounter = { ...facts, counterparty: myLabel };
+
   switch (event) {
     case "welcome": {
-      if (self.email) await sendEmail(self.email, welcomeEmail(greetName(self)));
+      // Onboarding: always sent, not a toggleable category.
+      if (self.email) await sendEmail(self.email, welcomeEmail(selfName));
       break;
     }
     case "signin": {
-      if (self.email)
-        await sendEmail(
-          self.email,
-          signinEmail({
-            name: greetName(self),
-            location: locationFrom(req),
-            device: deviceFrom(req),
-            when: new Date().toUTCString(),
-          })
-        );
+      await send(
+        self,
+        "signin",
+        signinEmail({
+          name: selfName,
+          location: locationFrom(req),
+          device: deviceFrom(req),
+          when: new Date().toUTCString(),
+        })
+      );
       break;
     }
     case "stream_started": {
-      // The payer is the caller; the payee is the counterparty. On a batch, the
-      // payer opts out of per-payee copies (notifySelf:false) so they get one
-      // confirmation, not one per recipient.
-      if (self.email && b.notifySelf !== false)
-        await sendEmail(self.email, streamStartedPayerEmail(facts, greetName(self)));
-      if (counter?.email)
-        await sendEmail(
-          counter.email,
-          streamStartedPayeeEmail({ ...facts, counterparty: myLabel }, greetName(counter))
-        );
+      // The payer is the caller by default; `perspective:"employee"` flips it for
+      // the rare payee-initiated open. On a batch, the payer opts out of per-payee
+      // copies (notifySelf:false) so they get one confirmation, not one per payee.
+      const callerIsPayer = str(b.perspective) !== "employee";
+      const wantSelf = b.notifySelf !== false;
+      if (callerIsPayer) {
+        if (wantSelf) await send(self, "streams", streamStartedPayerEmail(facts, selfName));
+        await send(counter, "streams", streamStartedPayeeEmail(factsToCounter, counterName));
+      } else {
+        if (wantSelf) await send(self, "streams", streamStartedPayeeEmail(facts, selfName));
+        await send(counter, "streams", streamStartedPayerEmail(factsToCounter, counterName));
+      }
+      break;
+    }
+    case "stream_activated": {
+      // A scheduled stream flipped live. Either side may detect the flip and fire
+      // this, so `perspective` decides which wording goes to whom.
+      const callerIsPayer = str(b.perspective) !== "employee";
+      if (callerIsPayer) {
+        await send(self, "streams", streamActivatedPayerEmail(facts, selfName));
+        await send(counter, "streams", streamActivatedPayeeEmail(factsToCounter, counterName));
+      } else {
+        await send(self, "streams", streamActivatedPayeeEmail(facts, selfName));
+        await send(counter, "streams", streamActivatedPayerEmail(factsToCounter, counterName));
+      }
+      break;
+    }
+    case "stream_claimed": {
+      // The payee withdraws by default; `perspective:"employer"` would flip it.
+      // `amount` is what was just claimed.
+      const callerIsPayee = str(b.perspective) !== "employer";
+      if (callerIsPayee) {
+        await send(self, "claims", streamClaimedPayeeEmail(facts, selfName));
+        await send(counter, "claims", streamClaimedPayerEmail(factsToCounter, counterName));
+      } else {
+        await send(self, "claims", streamClaimedPayerEmail(facts, selfName));
+        await send(counter, "claims", streamClaimedPayeeEmail(factsToCounter, counterName));
+      }
+      break;
+    }
+    case "stream_topped_up": {
+      // Always fired by the payer. `amount` is what was added; `rate` is the new
+      // (raised) daily rate, or empty if the rate was left unchanged.
+      await send(self, "topups", streamToppedUpPayerEmail(facts, selfName));
+      await send(counter, "topups", streamToppedUpPayeeEmail(factsToCounter, counterName));
+      break;
+    }
+    case "stream_cancelled": {
+      // Always fired by the payer (cancelStream is employer-only). The payer
+      // hears the refund; the payee hears they keep what already streamed.
+      const streamed = money(b.streamed);
+      const refund = money(b.refund);
+      await send(
+        self,
+        "cancellations",
+        streamCancelledPayerEmail({ counterparty: counterLabel, refund, streamed, reference }, selfName)
+      );
+      await send(
+        counter,
+        "cancellations",
+        streamCancelledPayeeEmail({ counterparty: myLabel, streamed, reference }, counterName)
+      );
       break;
     }
     case "request_received": {
       // The caller is the requester (payee); notify the payer they asked.
-      if (counter?.email)
-        await sendEmail(
-          counter.email,
-          requestReceivedEmail({ ...facts, counterparty: myLabel }, greetName(counter))
-        );
+      await send(counter, "requests", requestReceivedEmail(factsToCounter, counterName));
       break;
     }
     case "counter_offer": {
       // The caller is the payer countering; notify the original requester (payee).
-      if (counter?.email)
-        await sendEmail(
-          counter.email,
-          counterOfferEmail({ ...facts, counterparty: myLabel }, greetName(counter))
-        );
+      await send(counter, "requests", counterOfferEmail(factsToCounter, counterName));
       break;
     }
     case "receipt": {
       const name = str(b.counterpartyName, 120);
-      if (self.email)
-        await sendEmail(
-          self.email,
-          receiptEmail(
-            {
-              counterparty: name ?? counterLabel,
-              amount: amount ?? "the streamed amount",
-              reference,
-              when: str(b.when, 60) ?? new Date().toUTCString(),
-            },
-            greetName(self)
-          )
-        );
+      await send(
+        self,
+        "receipts",
+        receiptEmail(
+          {
+            counterparty: name ?? counterLabel,
+            amount: amount ?? "the streamed amount",
+            reference,
+            when: str(b.when, 60) ?? new Date().toUTCString(),
+          },
+          selfName
+        )
+      );
       break;
     }
     default:

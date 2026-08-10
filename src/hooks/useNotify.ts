@@ -15,6 +15,10 @@ export type NotifyEvent =
   | "welcome"
   | "signin"
   | "stream_started"
+  | "stream_activated"
+  | "stream_claimed"
+  | "stream_topped_up"
+  | "stream_cancelled"
   | "request_received"
   | "counter_offer"
   | "receipt";
@@ -34,6 +38,16 @@ export interface NotifyPayload {
   starts?: string | null;
   /** Formatted timestamp for a receipt. */
   when?: string | null;
+  /**
+   * The caller's role in this stream, so activation and other two-sided events
+   * can route the correctly-worded email to each party regardless of which side
+   * fired the notify. "employer" = payer, "employee" = payee.
+   */
+  perspective?: "employer" | "employee";
+  /** Amount already streamed, in 6-decimal USDC base units, for a cancellation. */
+  streamed?: string | null;
+  /** Amount refunded to the payer, in 6-decimal USDC base units, for a cancellation. */
+  refund?: string | null;
   /**
    * Whether to also email the caller their own copy. Defaults to true on the
    * server. Batch streams set this false on all but the first recipient so the

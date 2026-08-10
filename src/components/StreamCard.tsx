@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass, XCircle, ExternalLink } from "lucide-react";
 import type { StreamMeta } from "@/hooks/usePayroll";
@@ -8,20 +8,30 @@ import { streamMath } from "@/lib/stream-math";
 import { StreamTicker } from "./StreamTicker";
 import { formatRunway, formatUsdc, rateToDaily, rateToMonthly, shortenAddress, streamExplorerUrl } from "@/lib/utils";
 import { PAYROLL_ADDRESS } from "@/lib/contracts";
+import { useNotify } from "@/hooks/useNotify";
 import { cn } from "@/lib/utils";
 
 interface Props {
   /** Fully-decoded stream, batch-fetched by the parent — no per-card reads. */
   stream: StreamMeta;
   perspective: "employer" | "employee";
+  /** Reverse-resolved identity of the counterparty, if they have an account. */
+  counterparty?: { username: string | null; displayName: string | null } | null;
   onWithdraw?: () => void;
   onCancel?: () => void;
   onTopUp?: () => void;
   onOpenReceipt?: () => void;
 }
 
-export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp, onOpenReceipt }: Props) {
+export function StreamCard({ stream, perspective, counterparty, onWithdraw, onCancel, onTopUp, onOpenReceipt }: Props) {
   const { id: streamId, employer, employee, ratePerSecond, startTime, active, invoiceRef } = stream;
+
+  // The counterparty this card faces, and the friendly name to show for them:
+  // @handle first, then display name, else nothing (we fall back to the address).
+  const counterpartyAddress = perspective === "employer" ? employee : employer;
+  const counterpartyName = counterparty?.username
+    ? `@${counterparty.username}`
+    : counterparty?.displayName ?? null;
 
   // A live clock so the "begins in" countdown ticks and a scheduled stream flips
   // to live on its own, without waiting for the next data poll. Only active
@@ -48,6 +58,34 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
   const { notStarted, flowing, streaming, phase, unclaimed, streamedSoFar, remaining, committed, runwaySeconds, cancelled } =
     streamMath(stream, nowSec);
   const secondsUntilStart = Number(startTime) - nowSec;
+
+  // A scheduled stream that flips live while this card is open fires the
+  // "it's streaming now" email. We only act on the true→false edge of
+  // `notStarted`, so a card that loaded already-live never fires. There's no
+  // on-chain event indexer, so the notify is client-driven from whichever card
+  // observes the flip, with a per-browser localStorage guard to dedupe repeat
+  // mounts in this browser. The server emails both parties from `perspective`.
+  const { notify } = useNotify();
+  const wasNotStarted = useRef(notStarted);
+  useEffect(() => {
+    const flipped = wasNotStarted.current && !notStarted;
+    wasNotStarted.current = notStarted;
+    if (!flipped || !active) return;
+    const key = `cadence:activated:${streamId.toString()}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, "1");
+    } catch {
+      // localStorage blocked (private mode) — proceed without the dedupe guard.
+    }
+    notify("stream_activated", {
+      counterpartyAddress: perspective === "employer" ? employee : employer,
+      amount: committed.toString(),
+      rate: ratePerSecond.toString(),
+      reference: invoiceRef || null,
+      perspective,
+    });
+  }, [notStarted, active, streamId, perspective, employee, employer, committed, ratePerSecond, invoiceRef, notify]);
   const lowRunway = streaming && runwaySeconds < 86400;
   const awaitingClaim = phase === "awaiting_claim";
   const claimed = phase === "claimed";
@@ -139,9 +177,16 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
           </div>
           <p className={cn("mt-2 text-xs", active ? "text-panel-foreground/40" : "text-ink/40")}>
             {perspective === "employer" ? "paying" : "from"}{" "}
-            <span className="font-mono">
-              {shortenAddress(perspective === "employer" ? employee : employer)}
-            </span>
+            {counterpartyName ? (
+              <>
+                <span className={cn("font-medium", active ? "text-panel-foreground/70" : "text-ink/60")}>
+                  {counterpartyName}
+                </span>{" "}
+                <span className="font-mono opacity-60">{shortenAddress(counterpartyAddress)}</span>
+              </>
+            ) : (
+              <span className="font-mono">{shortenAddress(counterpartyAddress)}</span>
+            )}
           </p>
         </div>
         <div className={cn("text-right text-xs", active ? "text-panel-foreground/50" : "text-ink/45")}>
@@ -159,7 +204,7 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
             : awaitingClaim
             ? perspective === "employee"
               ? "ready to withdraw"
-              : "final amount owed"
+              : "total streamed"
             : claimed || cancelled
             ? "total streamed"
             : perspective === "employee"
@@ -238,17 +283,23 @@ export function StreamCard({ stream, perspective, onWithdraw, onCancel, onTopUp,
         )}
         {perspective === "employer" && (
           <>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onTopUp?.();
-              }}
-              className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 py-3 text-sm font-medium text-panel-foreground transition-colors hover:bg-white/15"
-            >
-              <Plus size={15} /> Top up
-            </motion.button>
+            {/* Top-up only makes sense while a stream can still run — a scheduled
+                stream (add runway before it starts) or a genuinely live one. Once
+                it's awaiting-claim, claimed, cancelled, or otherwise ended, the
+                money has stopped moving and there's nothing to extend. */}
+            {(notStarted || streaming) && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTopUp?.();
+                }}
+                className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 py-3 text-sm font-medium text-panel-foreground transition-colors hover:bg-white/15"
+              >
+                <Plus size={15} /> Top up
+              </motion.button>
+            )}
             {active && (
               <motion.button
                 whileHover={{ scale: 1.02 }}

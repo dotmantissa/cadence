@@ -123,6 +123,7 @@ export async function getNotifiableByAddress(
       email: string | null;
       username: string | null;
       displayName: string | null;
+      settings: Record<string, unknown> | null;
     }
   | null
 > {
@@ -134,6 +135,7 @@ export async function getNotifiableByAddress(
       notificationEmail: users.notificationEmail,
       username: users.username,
       displayName: users.displayName,
+      settings: users.settings,
     })
     .from(users)
     .where(eq(sql`lower(${users.walletAddress})`, value))
@@ -143,6 +145,9 @@ export async function getNotifiableByAddress(
     email: row.email ?? row.notificationEmail,
     username: row.username,
     displayName: row.displayName,
+    // Carried so the send gate can respect this recipient's own notification
+    // toggles, not just the caller's.
+    settings: row.settings,
   };
 }
 

@@ -320,6 +320,22 @@ export function streamStartedPayerEmail(
   f: StreamFacts,
   name?: string | null
 ): EmailContent {
+  // A scheduled stream has not started yet: the copy must say so and promise a
+  // second email at activation, rather than claiming it is already running.
+  if (f.starts) {
+    return render({
+      subject: `Your stream to ${f.counterparty} is scheduled`,
+      preheader: `${f.amount} set to start ${f.starts}.`,
+      heading: "Your stream is scheduled",
+      paragraphs: [
+        greeting(name),
+        `You set up a stream to ${f.counterparty}. It has not started yet. It is set to begin on ${f.starts}, and from then the balance moves to them every second until the deposit runs out or you cancel.`,
+        "We will email you again the moment it starts. You can adjust or cancel it before then from your dashboard.",
+      ],
+      rows: [{ label: "To", value: f.counterparty }, ...streamRows(f)],
+      cta: { label: "View your streams", href: "/payer" },
+    });
+  }
   return render({
     subject: `Your stream to ${f.counterparty} is live`,
     preheader: `${f.amount} now streaming at ${f.rate}.`,
@@ -339,6 +355,22 @@ export function streamStartedPayeeEmail(
   f: StreamFacts,
   name?: string | null
 ): EmailContent {
+  // Scheduled: tell them it is set up but not flowing yet, with a promise of a
+  // second note when it actually begins.
+  if (f.starts) {
+    return render({
+      subject: `${f.counterparty} scheduled a stream to you`,
+      preheader: `Starts ${f.starts}, then you earn ${f.rate}.`,
+      heading: "A stream is on the way",
+      paragraphs: [
+        greeting(name),
+        `${f.counterparty} set up a payment stream to you. It has not started yet. It is set to begin on ${f.starts}, and from then you earn in real time and can withdraw whatever has landed.`,
+        "We will email you again the moment it starts.",
+      ],
+      rows: [{ label: "From", value: f.counterparty }, ...streamRows(f)],
+      cta: { label: "Open your dashboard", href: "/payee" },
+    });
+  }
   return render({
     subject: `${f.counterparty} started a stream to you`,
     preheader: `You are earning ${f.rate}, starting now.`,
@@ -346,6 +378,44 @@ export function streamStartedPayeeEmail(
     paragraphs: [
       greeting(name),
       `${f.counterparty} just opened a payment stream to you. You are earning in real time, and you can withdraw whatever has landed whenever you want.`,
+      "Open your dashboard to watch it add up and cash out.",
+    ],
+    rows: [{ label: "From", value: f.counterparty }, ...streamRows(f)],
+    cta: { label: "See what you have earned", href: "/payee" },
+  });
+}
+
+/** To the payer: their scheduled stream just went live. */
+export function streamActivatedPayerEmail(
+  f: StreamFacts,
+  name?: string | null
+): EmailContent {
+  return render({
+    subject: `Your stream to ${f.counterparty} just started`,
+    preheader: `${f.amount} is now streaming at ${f.rate}.`,
+    heading: "Your scheduled stream is live",
+    paragraphs: [
+      greeting(name),
+      `The stream you scheduled to ${f.counterparty} just started. The balance now moves to them every second until the deposit runs out or you cancel.`,
+      "You can top it up, watch its runway, or cancel anytime from your dashboard.",
+    ],
+    rows: [{ label: "To", value: f.counterparty }, ...streamRows(f)],
+    cta: { label: "View your streams", href: "/payer" },
+  });
+}
+
+/** To the payee: a stream scheduled to them just went live. */
+export function streamActivatedPayeeEmail(
+  f: StreamFacts,
+  name?: string | null
+): EmailContent {
+  return render({
+    subject: `${f.counterparty}'s stream to you just started`,
+    preheader: `You are now earning ${f.rate}.`,
+    heading: "Your stream just started",
+    paragraphs: [
+      greeting(name),
+      `The stream ${f.counterparty} scheduled to you just went live. You are earning in real time now, and you can withdraw whatever has landed whenever you want.`,
       "Open your dashboard to watch it add up and cash out.",
     ],
     rows: [{ label: "From", value: f.counterparty }, ...streamRows(f)],
@@ -415,6 +485,166 @@ export function receiptEmail(
       greeting(name),
       `You just generated a receipt for your stream with ${opts.counterparty}. The details are below for your records.`,
       "The full breakdown, including the running total, is in the file you downloaded.",
+    ],
+    rows,
+    cta: { label: "Open your dashboard", href: "/payee" },
+  });
+}
+
+/** To the payer: the payee claimed some of what has streamed to them. */
+export function streamClaimedPayerEmail(
+  f: StreamFacts,
+  name?: string | null
+): EmailContent {
+  const rows: Row[] = [
+    { label: "To", value: f.counterparty },
+    { label: "Claimed", value: f.amount },
+  ];
+  if (f.reference) rows.push({ label: "Reference", value: f.reference });
+  return render({
+    subject: `${f.counterparty} claimed ${f.amount}`,
+    preheader: `${f.counterparty} withdrew ${f.amount} from your stream.`,
+    heading: "A withdrawal from your stream",
+    paragraphs: [
+      greeting(name),
+      `${f.counterparty} just claimed ${f.amount} from the stream you are paying them. That is money that had already streamed to them, so the finish time of your stream does not change.`,
+      "Nothing is needed from you. You can keep an eye on the stream from your dashboard.",
+    ],
+    rows,
+    cta: { label: "View your streams", href: "/payer" },
+  });
+}
+
+/** To the payee: confirmation of their own withdrawal. */
+export function streamClaimedPayeeEmail(
+  f: StreamFacts,
+  name?: string | null
+): EmailContent {
+  const rows: Row[] = [
+    { label: "From", value: f.counterparty },
+    { label: "Claimed", value: f.amount },
+  ];
+  if (f.reference) rows.push({ label: "Reference", value: f.reference });
+  return render({
+    subject: `You cashed out ${f.amount}`,
+    preheader: `${f.amount} is on its way to your wallet.`,
+    heading: "Cash-out confirmed",
+    paragraphs: [
+      greeting(name),
+      `You just withdrew ${f.amount} from your stream with ${f.counterparty}. It is on its way to your wallet.`,
+      "If the stream is still running, more will keep landing for you to claim later.",
+    ],
+    rows,
+    cta: { label: "Open your dashboard", href: "/payee" },
+  });
+}
+
+/** To the payer: confirmation they topped up a running stream. */
+export function streamToppedUpPayerEmail(
+  f: StreamFacts,
+  name?: string | null
+): EmailContent {
+  const rows: Row[] = [
+    { label: "To", value: f.counterparty },
+    { label: "Added", value: f.amount },
+  ];
+  if (f.rate) rows.push({ label: "New rate", value: f.rate });
+  if (f.reference) rows.push({ label: "Reference", value: f.reference });
+  return render({
+    subject: `You topped up your stream to ${f.counterparty}`,
+    preheader: f.rate ? `Added ${f.amount}. New rate ${f.rate}.` : `Added ${f.amount} to your stream.`,
+    heading: "Top-up added",
+    paragraphs: [
+      greeting(name),
+      f.rate
+        ? `You added ${f.amount} to your stream with ${f.counterparty}. To keep the same finish time, the pay rate moved up to ${f.rate}.`
+        : `You added ${f.amount} to your stream with ${f.counterparty}.`,
+      "You can manage the stream anytime from your dashboard.",
+    ],
+    rows,
+    cta: { label: "View your streams", href: "/payer" },
+  });
+}
+
+/** To the payee: the payer added more to their stream. */
+export function streamToppedUpPayeeEmail(
+  f: StreamFacts,
+  name?: string | null
+): EmailContent {
+  const rows: Row[] = [
+    { label: "From", value: f.counterparty },
+    { label: "Added", value: f.amount },
+  ];
+  if (f.rate) rows.push({ label: "New rate", value: f.rate });
+  if (f.reference) rows.push({ label: "Reference", value: f.reference });
+  return render({
+    subject: `${f.counterparty} added to your stream`,
+    preheader: f.rate ? `${f.amount} more. You now earn ${f.rate}.` : `${f.amount} more on your stream.`,
+    heading: "Your stream just grew",
+    paragraphs: [
+      greeting(name),
+      f.rate
+        ? `${f.counterparty} added ${f.amount} to the stream paying you. You now earn ${f.rate}, set to finish at the same time as before.`
+        : `${f.counterparty} added ${f.amount} to the stream paying you.`,
+      "Open your dashboard to watch it add up and cash out.",
+    ],
+    rows,
+    cta: { label: "See what you have earned", href: "/payee" },
+  });
+}
+
+/** To the payer: confirmation they cancelled a stream. */
+export function streamCancelledPayerEmail(
+  opts: {
+    counterparty: string;
+    refund?: string | null;
+    streamed?: string | null;
+    reference?: string | null;
+  },
+  name?: string | null
+): EmailContent {
+  const rows: Row[] = [{ label: "To", value: opts.counterparty }];
+  if (opts.streamed) rows.push({ label: "Streamed to them", value: opts.streamed });
+  if (opts.refund) rows.push({ label: "Refunded to you", value: opts.refund });
+  if (opts.reference) rows.push({ label: "Reference", value: opts.reference });
+  return render({
+    subject: `You cancelled your stream to ${opts.counterparty}`,
+    preheader: opts.refund ? `${opts.refund} refunded to your wallet.` : "Your stream has stopped.",
+    heading: "Stream cancelled",
+    paragraphs: [
+      greeting(name),
+      `You cancelled the stream to ${opts.counterparty}. It has stopped, and they keep everything that had already streamed to them.`,
+      opts.refund
+        ? `The unstreamed remainder, ${opts.refund}, was refunded to your wallet.`
+        : "Any unstreamed remainder was refunded to your wallet.",
+    ],
+    rows,
+    cta: { label: "View your streams", href: "/payer" },
+  });
+}
+
+/** To the payee: the payer cancelled the stream paying them. */
+export function streamCancelledPayeeEmail(
+  opts: {
+    counterparty: string;
+    streamed?: string | null;
+    reference?: string | null;
+  },
+  name?: string | null
+): EmailContent {
+  const rows: Row[] = [{ label: "From", value: opts.counterparty }];
+  if (opts.streamed) rows.push({ label: "Streamed to you", value: opts.streamed });
+  if (opts.reference) rows.push({ label: "Reference", value: opts.reference });
+  return render({
+    subject: `${opts.counterparty} cancelled your stream`,
+    preheader: opts.streamed ? `You keep the ${opts.streamed} already streamed.` : "The stream has stopped.",
+    heading: "A stream was cancelled",
+    paragraphs: [
+      greeting(name),
+      `${opts.counterparty} cancelled the stream that was paying you. It has stopped now.`,
+      opts.streamed
+        ? `You keep everything that already streamed to you, which is ${opts.streamed}. Withdraw it anytime from your dashboard if you have not already.`
+        : "You keep everything that already streamed to you. Withdraw it anytime from your dashboard if you have not already.",
     ],
     rows,
     cta: { label: "Open your dashboard", href: "/payee" },

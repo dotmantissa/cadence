@@ -12,13 +12,11 @@ import {
   Hourglass,
   CheckCircle2,
   XCircle,
-  ExternalLink,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { Modal } from "./Modal";
 import { StreamMeta } from "@/hooks/usePayroll";
-import { PAYROLL_ADDRESS } from "@/lib/contracts";
 import { streamMath } from "@/lib/stream-math";
 import { useNotify } from "@/hooks/useNotify";
 import {
@@ -26,7 +24,6 @@ import {
   rateToDaily,
   rateToMonthly,
   shortenAddress,
-  streamExplorerUrl,
   formatTimestamp,
   cn,
 } from "@/lib/utils";
@@ -423,18 +420,6 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
                 : "none yet"}
             </Row>
             <Row label="Receipt generated">{generatedAt}</Row>
-          </div>
-
-          <div className="mt-3 flex justify-center">
-            <a
-              href={streamExplorerUrl(PAYROLL_ADDRESS, stream.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-panel/40 transition-colors hover:text-panel/70"
-            >
-              <ExternalLink size={12} />
-              View on Arc explorer
-            </a>
           </div>
 
           <p className="mt-4 text-center text-[11px] text-panel/35">

@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useConfig } from "wagmi";
+import { waitForTransactionReceipt } from "@wagmi/core";
 import { motion } from "framer-motion";
 import { Wallet, Waves, Eye, EyeOff, Send } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
@@ -22,13 +24,17 @@ import {
   ReqStatus,
 } from "@/hooks/usePayroll";
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
+import { useNotify } from "@/hooks/useNotify";
+import { streamMath } from "@/lib/stream-math";
 import { formatUsdc } from "@/lib/utils";
 
 export default function EmployeePage() {
   const { address, connected } = useActiveAddress();
+  const config = useConfig();
   const { data: ids, isLoading: loadingIds, refetch } = useEmployeeStreams(address);
   const { data: balance } = useUsdcBalance(address);
   const { withdraw } = useWithdraw();
+  const { notify } = useNotify();
   const [hideBalance, toggleBalance] = useBalancePrivacy();
 
   const [view, setView] = useState<"streams" | "requests">("streams");
@@ -37,6 +43,32 @@ export default function EmployeePage() {
   const ordered = useMemo(() => (ids ? [...ids].reverse() : []), [ids]);
   const { streams, isLoading: loadingMeta } = useStreamsMeta(ordered);
   const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
+
+  // Cash out, then tell both sides once the tx confirms. The claimable amount is
+  // snapshotted before the withdraw zeroes it, so the email reports what was
+  // actually taken. A rejected/failed tx fires no email.
+  const handleWithdraw = useCallback(
+    async (id: bigint) => {
+      const stream = streams.find((s) => s.id === id);
+      const unclaimed = stream ? streamMath(stream).unclaimed : 0n;
+      try {
+        const hash = await withdraw(id);
+        await waitForTransactionReceipt(config, { hash });
+        await refetch();
+        if (stream && unclaimed > 0n) {
+          notify("stream_claimed", {
+            counterpartyAddress: stream.employer,
+            amount: unclaimed.toString(),
+            perspective: "employee",
+            reference: stream.invoiceRef || null,
+          });
+        }
+      } catch {
+        // Wallet rejected or the tx failed — nothing claimed, no email.
+      }
+    },
+    [streams, withdraw, config, refetch, notify]
+  );
 
   // Requests this wallet has sent (it is the payee), newest-first.
   const { data: reqIds, isLoading: loadingReqIds, refetch: refetchReqs } = usePayeeRequests(address);
@@ -158,10 +190,7 @@ export default function EmployeePage() {
             streams={streams}
             perspective="employee"
             loading={loadingStreams}
-            onWithdraw={(id) => {
-              withdraw(id);
-              refetch();
-            }}
+            onWithdraw={handleWithdraw}
             emptyState={
               <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
                 <p className="text-ink/60">No streams pointed at this wallet yet.</p>

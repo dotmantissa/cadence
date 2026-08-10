@@ -10,10 +10,14 @@ import {
 import { useApi } from "@/hooks/useApi";
 import { RequestCard, type ReqPerspective } from "./RequestCard";
 import { RespondRequestModal } from "./RespondRequestModal";
+import { Pagination, usePagination } from "./Pagination";
 import { cn } from "@/lib/utils";
 
 type Identity = { username: string | null; displayName: string | null };
 type Tab = "open" | "settled" | "all";
+
+/** Cards per page — matches the streams grid for a consistent 4-up layout. */
+const PAGE_SIZE = 4;
 
 interface Props {
   /** Request IDs for this wallet in the given role, newest-first. */
@@ -92,6 +96,9 @@ export function RequestCollection({ ids, perspective, loading = false, onChanged
     return requests.filter((r) => !isOpen(r));
   }, [requests, tab]);
 
+  // Page the visible slice 4-up; switching tabs snaps back to the first page.
+  const pager = usePagination(visible, PAGE_SIZE, tab);
+
   const nameFor = (r: RequestMeta) => {
     const id = identities[counterpartyOf(r)];
     return id?.username ?? id?.displayName ?? null;
@@ -148,7 +155,7 @@ export function RequestCollection({ ids, perspective, loading = false, onChanged
         </div>
       ) : (
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
-          {visible.map((r) => (
+          {pager.pageItems.map((r) => (
             <RequestCard
               key={r.id.toString()}
               request={r}
@@ -168,6 +175,18 @@ export function RequestCollection({ ids, perspective, loading = false, onChanged
             />
           ))}
         </div>
+      )}
+
+      {!loading && visible.length > 0 && (
+        <Pagination
+          page={pager.page}
+          pageCount={pager.pageCount}
+          total={pager.total}
+          start={pager.start}
+          end={pager.end}
+          onPrev={pager.prev}
+          onNext={pager.next}
+        />
       )}
 
       {responding && (

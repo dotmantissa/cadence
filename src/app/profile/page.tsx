@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AtSign, Check, Loader2, Mail, Trash2, Wallet, X } from "lucide-react";
+import { AtSign, Bell, Check, Loader2, Mail, Trash2, Wallet, X } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
 import { Button } from "@/components/Button";
@@ -9,6 +9,11 @@ import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { useApi, ApiError } from "@/hooks/useApi";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { validateUsername, USERNAME_MAX, usernameChangeUnlockAt } from "@/lib/username";
+import {
+  NOTIFICATION_CATEGORIES,
+  readNotificationPrefs,
+  withNotificationPrefs,
+} from "@/lib/notifications";
 import { shortenAddress } from "@/lib/utils";
 
 /**
@@ -51,6 +56,7 @@ export default function ProfilePage() {
           <UsernameField />
           <DisplayNameField />
           <NotificationEmailField />
+          <NotificationPreferences />
           <ReadOnlyIdentity />
         </div>
       </main>
@@ -427,6 +433,122 @@ function NotificationEmailField() {
             Remove
           </button>
         )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Toggle which account emails you receive. Every category is on by default, so a
+ * fresh account (or one that never opened this section) still gets everything.
+ * Saving writes the whole map into `settings.notifications`, preserving any other
+ * settings keys we might store later.
+ */
+function NotificationPreferences() {
+  const { api } = useApi();
+  const { user, setUser } = useProfileContext();
+
+  // Local working copy of the on/off map, seeded from the saved settings.
+  const [prefs, setPrefs] = useState<Record<string, boolean>>(() =>
+    readNotificationPrefs(user?.settings)
+  );
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(false);
+
+  // Re-seed if the profile loads or changes underneath us.
+  useEffect(() => {
+    setPrefs(readNotificationPrefs(user?.settings));
+  }, [user?.settings]);
+
+  const saved0 = readNotificationPrefs(user?.settings);
+  // A category is "on" unless explicitly false, in both the saved and working
+  // copies, so comparing the effective booleans catches real changes only.
+  const on = (map: Record<string, boolean>, key: string) => map[key] !== false;
+  const dirty = NOTIFICATION_CATEGORIES.some((c) => on(prefs, c.key) !== on(saved0, c.key));
+
+  async function save() {
+    setError(false);
+    setBusy(true);
+    try {
+      // Store an explicit boolean for every category so the map is complete and
+      // future defaults never silently flip a user's saved choice.
+      const complete: Record<string, boolean> = {};
+      for (const c of NOTIFICATION_CATEGORIES) complete[c.key] = on(prefs, c.key);
+      const res = await api.updateProfile({
+        settings: withNotificationPrefs(user?.settings, complete),
+      });
+      setUser(res.user);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-none border border-ink/10 bg-paper-warm p-6">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-volt-wash text-volt">
+          <Bell size={15} />
+        </span>
+        <div>
+          <p className="text-sm font-medium text-ink">Email notifications</p>
+          <p className="mt-0.5 text-xs text-ink/45">
+            Choose which account emails you receive. Turn one off and we stop
+            sending it. Everything is on unless you say otherwise.
+          </p>
+        </div>
+      </div>
+
+      <ul className="mt-5 divide-y divide-ink/[0.07]">
+        {NOTIFICATION_CATEGORIES.map((c) => {
+          const checked = on(prefs, c.key);
+          return (
+            <li key={c.key} className="flex items-center justify-between gap-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm text-ink">{c.label}</p>
+                <p className="text-xs text-ink/45">{c.description}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={checked}
+                aria-label={c.label}
+                onClick={() => setPrefs((p) => ({ ...p, [c.key]: !on(p, c.key) }))}
+                className={
+                  "relative h-6 w-11 shrink-0 rounded-full transition-colors " +
+                  (checked ? "bg-volt" : "bg-ink/15")
+                }
+              >
+                <span
+                  className={
+                    "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform " +
+                    (checked ? "translate-x-[22px]" : "translate-x-0.5")
+                  }
+                />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="mt-2 min-h-[1.25rem] text-xs">
+        {error && <span className="text-red-500">Could not save, try again.</span>}
+        {!error && saved && !dirty && <span className="text-emerald-600">Saved.</span>}
+      </div>
+      <div className="mt-3">
+        <Button onClick={save} disabled={!dirty || busy} variant="volt">
+          {busy ? (
+            <>
+              <Loader2 size={16} className="animate-spin" /> Saving
+            </>
+          ) : (
+            "Save preferences"
+          )}
+        </Button>
       </div>
     </section>
   );

@@ -5,6 +5,7 @@ import { Search, X, SlidersHorizontal, FileText } from "lucide-react";
 import { StreamCard } from "./StreamCard";
 import { StreamReceiptModal } from "./StreamReceiptModal";
 import { StatementFilterModal } from "./StatementFilterModal";
+import { Pagination, usePagination } from "./Pagination";
 import { type StreamMeta } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,9 @@ import { streamMath } from "@/lib/stream-math";
 
 type Filter = "ongoing" | "scheduled" | "complete" | "all";
 type Identity = { username: string | null; displayName: string | null };
+
+/** Cards per page — keeps every stream view to a compact, scannable 4-up grid. */
+const PAGE_SIZE = 4;
 
 interface Props {
   /** Decoded streams for this wallet, already newest-first. */
@@ -163,6 +167,10 @@ export function StreamCollection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streams, filter, query, fromDate, toDate, identities, perspective]);
 
+  // Page the visible slice 4-up. Any change to the filter/search/date controls
+  // resets to the first (most-recent) page via the reset key.
+  const pager = usePagination(visible, PAGE_SIZE, `${filter}|${query}|${fromDate}|${toDate}`);
+
   // No streams on this wallet at all — the page's own empty prompt.
   if (!loading && streams.length === 0) {
     return <>{emptyState}</>;
@@ -312,11 +320,12 @@ export function StreamCollection({
         </div>
       ) : (
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
-          {visible.map((s) => (
+          {pager.pageItems.map((s) => (
             <StreamCard
               key={s.id.toString()}
               stream={s}
               perspective={perspective}
+              counterparty={identities[counterpartyOf(s)] ?? null}
               onOpenReceipt={() => setReceipt(s)}
               onWithdraw={onWithdraw ? () => onWithdraw(s.id) : undefined}
               onCancel={onCancel ? () => onCancel(s.id) : undefined}
@@ -324,6 +333,18 @@ export function StreamCollection({
             />
           ))}
         </div>
+      )}
+
+      {!loading && visible.length > 0 && (
+        <Pagination
+          page={pager.page}
+          pageCount={pager.pageCount}
+          total={pager.total}
+          start={pager.start}
+          end={pager.end}
+          onPrev={pager.prev}
+          onNext={pager.next}
+        />
       )}
 
       {receipt && (

@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Wallet, Waves, Eye, EyeOff, Send } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
+import { WalletRestoring } from "@/components/WalletRestoring";
 import { StreamCollection } from "@/components/StreamCollection";
 import { RequestCollection } from "@/components/RequestCollection";
 import { RequestStreamModal } from "@/components/RequestStreamModal";
@@ -29,7 +30,7 @@ import { streamMath } from "@/lib/stream-math";
 import { formatUsdc } from "@/lib/utils";
 
 export default function EmployeePage() {
-  const { address, connected } = useActiveAddress();
+  const { address, connected, restoring } = useActiveAddress();
   const config = useConfig();
   const { data: ids, isLoading: loadingIds, refetch } = useEmployeeStreams(address);
   const { data: balance } = useUsdcBalance(address);
@@ -97,10 +98,14 @@ export default function EmployeePage() {
     return (
       <div className="min-h-screen bg-paper">
         <Navbar />
-        <WalletGate
-          headline="Connect to see your bag"
-          sub="Link your wallet to watch your salary tick up by the second and cash out whenever you feel like it."
-        />
+        {restoring ? (
+          <WalletRestoring />
+        ) : (
+          <WalletGate
+            headline="Connect to see your bag"
+            sub="Link your wallet to watch your salary tick up by the second and cash out whenever you feel like it."
+          />
+        )}
       </div>
     );
   }

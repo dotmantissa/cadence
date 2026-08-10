@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AtSign, Bell, Check, ChevronDown, Loader2, Mail, Trash2, Wallet, X } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
+import { WalletRestoring } from "@/components/WalletRestoring";
 import { Button } from "@/components/Button";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { useApi, ApiError } from "@/hooks/useApi";
@@ -24,16 +25,20 @@ import { shortenAddress } from "@/lib/utils";
 type Status = "idle" | "checking" | "available" | "taken" | "invalid";
 
 export default function ProfilePage() {
-  const { connected } = useActiveAddress();
+  const { connected, restoring } = useActiveAddress();
 
   if (!connected) {
     return (
       <div className="min-h-screen bg-paper">
         <Navbar />
-        <WalletGate
-          headline="Connect to see your profile"
-          sub="Link your wallet to set up your handle and manage your account."
-        />
+        {restoring ? (
+          <WalletRestoring />
+        ) : (
+          <WalletGate
+            headline="Connect to see your profile"
+            sub="Link your wallet to set up your handle and manage your account."
+          />
+        )}
       </div>
     );
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useAccount } from "wagmi";
 
@@ -29,10 +29,36 @@ export function useActiveAddress() {
     [raw]
   );
 
+  // A returning user is `authenticated` the instant Privy rehydrates its stored
+  // session, but wagmi surfaces the active `address` a beat later. During that
+  // gap the user is fully logged in yet has no address — and a page that reads
+  // that as "logged out" flashes the connect screen for ~a second before the
+  // dashboard. `settling` marks exactly that window.
+  const settling = ready && authenticated && !address;
+
+  // Guard against a wallet that never reconnects (e.g. an external wallet whose
+  // site permission was revoked, so the address never arrives): after a grace
+  // period we stop reporting `restoring`, letting the connect gate reappear so
+  // the user can re-link instead of watching an endless spinner.
+  const [graceElapsed, setGraceElapsed] = useState(false);
+  useEffect(() => {
+    if (!settling) {
+      setGraceElapsed(false);
+      return;
+    }
+    const t = setTimeout(() => setGraceElapsed(true), 6000);
+    return () => clearTimeout(t);
+  }, [settling]);
+
   return {
     ready,
     authenticated,
     address: authenticated ? address : undefined,
     connected: ready && authenticated && !!address,
+    // True while we're still bringing the session/wallet up and can't yet
+    // conclude the user is logged out. Pages hold a loading state on this
+    // instead of rendering the connect gate, so a logged-in refresh goes
+    // warming-up → dashboard with no connect-button flash in between.
+    restoring: !ready || (settling && !graceElapsed),
   };
 }

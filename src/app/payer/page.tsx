@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Plus, Wallet, Waves, Eye, EyeOff } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
+import { WalletRestoring } from "@/components/WalletRestoring";
 import { StreamCollection } from "@/components/StreamCollection";
 import { RequestCollection } from "@/components/RequestCollection";
 import { CreateStreamModal } from "@/components/CreateStreamModal";
@@ -31,7 +32,7 @@ import { formatUsdc } from "@/lib/utils";
 import type { StreamMeta } from "@/hooks/usePayroll";
 
 export default function EmployerPage() {
-  const { address, connected } = useActiveAddress();
+  const { address, connected, restoring } = useActiveAddress();
   const config = useConfig();
   const { data: ids, isLoading: loadingIds, refetch } = useEmployerStreams(address);
   const { data: balance } = useUsdcBalance(address);
@@ -140,10 +141,14 @@ export default function EmployerPage() {
     return (
       <div className="min-h-screen bg-paper">
         <Navbar />
-        <WalletGate
-          headline="Connect to start paying"
-          sub="Hook up your wallet to open streams, top them up, and watch your runway in real time."
-        />
+        {restoring ? (
+          <WalletRestoring />
+        ) : (
+          <WalletGate
+            headline="Connect to start paying"
+            sub="Hook up your wallet to open streams, top them up, and watch your runway in real time."
+          />
+        )}
       </div>
     );
   }

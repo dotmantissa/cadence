@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AtSign, Bell, Check, Loader2, Mail, Trash2, Wallet, X } from "lucide-react";
+import { AtSign, Bell, Check, ChevronDown, Loader2, Mail, Trash2, Wallet, X } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { WalletGate } from "@/components/WalletGate";
 import { Button } from "@/components/Button";
@@ -448,6 +448,8 @@ function NotificationPreferences() {
   const { api } = useApi();
   const { user, setUser } = useProfileContext();
 
+  // Collapsed by default: the section is a single row until the user opens it.
+  const [expanded, setExpanded] = useState(false);
   // Local working copy of the on/off map, seeded from the saved settings.
   const [prefs, setPrefs] = useState<Record<string, boolean>>(() =>
     readNotificationPrefs(user?.settings)
@@ -466,6 +468,12 @@ function NotificationPreferences() {
   // copies, so comparing the effective booleans catches real changes only.
   const on = (map: Record<string, boolean>, key: string) => map[key] !== false;
   const dirty = NOTIFICATION_CATEGORIES.some((c) => on(prefs, c.key) !== on(saved0, c.key));
+  // Summary shown on the collapsed header, driven by the SAVED map so it never
+  // jumps around while the section is closed.
+  const onCount = NOTIFICATION_CATEGORIES.filter((c) => on(saved0, c.key)).length;
+  const total = NOTIFICATION_CATEGORIES.length;
+  const summary =
+    onCount === total ? "All on" : onCount === 0 ? "All off" : `${onCount} of ${total} on`;
 
   async function save() {
     setError(false);
@@ -490,66 +498,83 @@ function NotificationPreferences() {
 
   return (
     <section className="rounded-none border border-ink/10 bg-paper-warm p-6">
-      <div className="flex items-start gap-3">
+      {/* Clickable header: the whole row toggles the section open/closed. */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-start gap-3 text-left"
+      >
         <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-volt-wash text-volt">
           <Bell size={15} />
         </span>
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-ink">Email notifications</p>
           <p className="mt-0.5 text-xs text-ink/45">
             Choose which account emails you receive. Turn one off and we stop
             sending it. Everything is on unless you say otherwise.
           </p>
         </div>
-      </div>
+        <span className="mt-0.5 flex shrink-0 items-center gap-2 text-xs text-ink/45">
+          {!expanded && <span className="hidden sm:inline">{summary}</span>}
+          <ChevronDown
+            size={16}
+            className={"transition-transform " + (expanded ? "rotate-180" : "")}
+          />
+        </span>
+      </button>
 
-      <ul className="mt-5 divide-y divide-ink/[0.07]">
-        {NOTIFICATION_CATEGORIES.map((c) => {
-          const checked = on(prefs, c.key);
-          return (
-            <li key={c.key} className="flex items-center justify-between gap-4 py-3">
-              <div className="min-w-0">
-                <p className="text-sm text-ink">{c.label}</p>
-                <p className="text-xs text-ink/45">{c.description}</p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={checked}
-                aria-label={c.label}
-                onClick={() => setPrefs((p) => ({ ...p, [c.key]: !on(p, c.key) }))}
-                className={
-                  "relative h-6 w-11 shrink-0 rounded-full transition-colors " +
-                  (checked ? "bg-volt" : "bg-ink/15")
-                }
-              >
-                <span
-                  className={
-                    "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform " +
-                    (checked ? "translate-x-[22px]" : "translate-x-0.5")
-                  }
-                />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {expanded && (
+        <>
+          <ul className="mt-5 divide-y divide-ink/[0.07]">
+            {NOTIFICATION_CATEGORIES.map((c) => {
+              const checked = on(prefs, c.key);
+              return (
+                <li key={c.key} className="flex items-center justify-between gap-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink">{c.label}</p>
+                    <p className="text-xs text-ink/45">{c.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={checked}
+                    aria-label={c.label}
+                    onClick={() => setPrefs((p) => ({ ...p, [c.key]: !on(p, c.key) }))}
+                    className={
+                      "relative h-6 w-11 shrink-0 rounded-full transition-colors " +
+                      (checked ? "bg-volt" : "bg-ink/15")
+                    }
+                  >
+                    <span
+                      className={
+                        "absolute left-0.5 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow-sm transition-transform " +
+                        (checked ? "translate-x-5" : "translate-x-0")
+                      }
+                    />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
 
-      <div className="mt-2 min-h-[1.25rem] text-xs">
-        {error && <span className="text-red-500">Could not save, try again.</span>}
-        {!error && saved && !dirty && <span className="text-emerald-600">Saved.</span>}
-      </div>
-      <div className="mt-3">
-        <Button onClick={save} disabled={!dirty || busy} variant="volt">
-          {busy ? (
-            <>
-              <Loader2 size={16} className="animate-spin" /> Saving
-            </>
-          ) : (
-            "Save preferences"
-          )}
-        </Button>
-      </div>
+          <div className="mt-2 min-h-[1.25rem] text-xs">
+            {error && <span className="text-red-500">Could not save, try again.</span>}
+            {!error && saved && !dirty && <span className="text-emerald-600">Saved.</span>}
+          </div>
+          <div className="mt-3">
+            <Button onClick={save} disabled={!dirty || busy} variant="volt">
+              {busy ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" /> Saving
+                </>
+              ) : (
+                "Save preferences"
+              )}
+            </Button>
+          </div>
+        </>
+      )}
     </section>
   );
 }

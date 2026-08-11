@@ -1,0 +1,74 @@
+Introducing Cadence: getting paid by the second, onchain
+
+Most work happens continuously, but money still arrives in lumps. You earn every day, then wait for a date on someone else's calendar to actually get paid. Until then the money you already earned sits in an account that isn't yours. Cadence changes that. It streams USDC by the second, so the moment a payer opens a stream, the payee starts earning in real time and can cash out whenever they want.
+
+I built Cadence on @Arc because the idea only works when the money and the settlement layer cooperate. This post walks through what it does, how it works, and why @Arc is the right home for it.
+
+[IMAGE: Cadence landing page at cadenceonarc.tech, showing the "paid by the second" hero with the live counter ticking]
+
+
+What Cadence does
+
+A payer funds a stream once. The full amount goes into a smart contract up front, and the contract releases it second by second at the rate both sides agreed. The payee watches their balance tick up live and withdraws any earned amount at any time. There is no pay run, no invoice lag, no waiting on a bank. If the payer cancels, every unstreamed cent goes straight back to their wallet automatically. Money that has been earned is money the payee already holds onchain, not a promise they are waiting on.
+
+Payroll, a contractor retainer, a one-off invoice: the mechanic is the same. Money that moves the way time does.
+
+
+How it works, step by step
+
+1. Connect a wallet. Sign in with an email or an existing wallet. New users get a wallet with no seed phrase to write down, and there is a one-click button to pull testnet USDC from the Circle faucet so you can try everything immediately.
+
+[IMAGE: The connect screen and the one-click "get testnet USDC" faucet button after connecting]
+
+2. Open a stream. The payer sets the recipient, the amount, and how long it should run. Cadence works out the per-second rate and starts streaming right away. You can also schedule a stream to begin later, or open an entire payroll run of many recipients in a single transaction with one approval.
+
+[IMAGE: The "New stream" modal with recipient, amount, and duration filled in, showing the calculated per-second rate]
+
+3. Watch it flow. The payee opens their dashboard and sees earnings accrue in real time, down to the fraction of a cent, updating every second without a refresh. The payer sees live runway on every stream, so they always know how long the balance will last before it needs a top up.
+
+[IMAGE: The payee dashboard with a live stream card, the earnings counter mid-tick and the "cash out" button]
+
+4. Cash out anytime. The payee withdraws whatever they have earned so far. Because @Arc finalizes transactions in under a second, the withdrawal is settled and irreversible almost instantly, which is what makes "cash out now" real rather than a pending state.
+
+[IMAGE: A withdrawal confirmation, and the wallet balance updating right after]
+
+5. Top up or cancel. The payer can add funds to a live stream or cancel it at any point. Topping up a running stream raises the pay rate over the time that remains instead of quietly pushing the end date out. On cancel, the earned portion stays with the payee and the rest refunds to the payer, all in one transaction.
+
+[IMAGE: The payer view showing the top-up and cancel actions on a running stream card]
+
+6. Request and negotiate. A payee can also request a stream from a payer, who accepts the terms as they are or counters with their own. It is a lightweight negotiation that runs entirely onchain, so neither side has to trust the other or coordinate offchain.
+
+[IMAGE: The request/counter-offer flow, showing a pending request and the accept or counter options]
+
+Alongside the live cards, Cadence produces shareable per-stream receipts and full account statements, viewable in the app or downloadable as a branded file, so both sides keep a clean record of what was paid.
+
+[IMAGE: A generated Cadence statement or receipt PDF]
+
+
+Why I built it on @Arc
+
+Cadence is not a streaming app that happens to run on @Arc. The core promise, earned money you can spend right now, holds together because of what @Arc provides at the protocol level.
+
+USDC is the native gas token. On @Arc the dollar you deposit, the dollar that streams, and the gas that moves it are the same asset (Arc docs: Stablecoin native model). On most networks a payee earns a stablecoin but needs a separate, volatile token just to touch it. @Arc removes that friction, so earnings are always spendable. A payee withdraws USDC by spending a sliver of that same USDC.
+
+Settlement in under a second. @Arc's consensus finalizes every block in under a second with no reorganizations (Arc docs: Deterministic finality). Streaming by the second only makes sense when a withdrawal is final the instant it commits.
+
+Fees denominated in USDC. Base fees target about a cent and are priced in dollars, not a volatile gas token (Arc docs: Gas and fees). Streaming invites a lot of small actions, withdraw a little, top up, cancel, and stable, dollar-priced fees keep those actions economical.
+
+Put together, single-asset USDC, sub-second finality, and stable fees are what turn "paid by the second, spendable by the second" into something that actually works.
+
+
+Under the hood
+
+The contract is a plain Solidity PayrollManager, built and tested with Foundry, holding each stream's escrow and doing the per-second accounting onchain. The app is Next.js and React with Privy for sign-in and wallets, wired through wagmi and viem, and a same-origin RPC proxy that keeps reads reliable in the browser. Nothing that moves money lives offchain: an optional database holds only conveniences like usernames and saved payees, and could be wiped without anyone losing a cent.
+
+
+Try it
+
+Cadence is live on @Arc testnet today. It uses testnet USDC, and there is a one-click faucet inside the app to fund a wallet, so you can open a stream and watch it flow in a couple of minutes.
+
+Live app: cadenceonarc.tech
+
+[IMAGE: Final shot of an active Cadence dashboard with a couple of live streams running]
+
+Disclosure: I am the builder of Cadence, and this is an introduction to my own project. It currently runs on testnet only.

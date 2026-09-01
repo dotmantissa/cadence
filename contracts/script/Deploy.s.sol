@@ -11,13 +11,15 @@ contract DeployScript is Script {
     function run() public returns (PayrollManager payroll) {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
+        address adjudicator = vm.envOr("ADJUDICATOR_ADDRESS", deployer);
 
         console.log("Deployer:", deployer);
         console.log("Chain ID:", block.chainid);
         console.log("USDC:", USDC_ARC);
+        console.log("Adjudicator:", adjudicator);
 
         vm.startBroadcast(deployerKey);
-        payroll = new PayrollManager(USDC_ARC);
+        payroll = new PayrollManager(USDC_ARC, adjudicator);
         vm.stopBroadcast();
 
         console.log("PayrollManager deployed at:", address(payroll));

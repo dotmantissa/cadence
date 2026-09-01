@@ -7,6 +7,7 @@ import {ReentrancyGuard} from "./utils/ReentrancyGuard.sol";
 /// @notice Continuous per-second USDC payroll streaming on Arc.
 contract PayrollManager is ReentrancyGuard {
     IERC20 public immutable usdc;
+    address public immutable adjudicator;
 
     struct Stream {
         address employer;
@@ -29,6 +30,43 @@ contract PayrollManager is ReentrancyGuard {
     mapping(address => uint256[]) public employeeStreams;
 
     uint256 public nextStreamId;
+
+    // ---- Adjudicated cancellation --------------------------------------
+
+    /// @notice A payer's cancellation pauses a stream while its unstreamed
+    /// escrow remains locked. The payee has 24 hours to file an appeal, after
+    /// which a GenLayer verdict can either resume the stream or release the
+    /// held escrow to the payer.
+    enum CancellationStatus {
+        None,
+        AppealWindow,
+        Appealed,
+        AppealUpheld,
+        AppealRejected,
+        Unappealed,
+        TimedOut
+    }
+
+    struct Cancellation {
+        uint64 nonce;
+        uint64 requestedAt;
+        uint64 appealDeadline;
+        uint64 adjudicationDeadline;
+        uint128 escrowedRefund;
+        CancellationStatus status;
+        bytes32 evidenceHash;
+        bytes32 verdictHash;
+        string reason;
+        string evidenceUri;
+    }
+
+    uint64 public constant APPEAL_WINDOW = 24 hours;
+    uint64 public constant ADJUDICATION_TIMEOUT = 7 days;
+
+    // streamId => latest cancellation request
+    mapping(uint256 => Cancellation) public cancellations;
+    // streamId => monotonically increasing cancellation request nonce
+    mapping(uint256 => uint64) public cancellationNonces;
 
     // ---- Stream requests + negotiation ----------------------------------
 
@@ -83,7 +121,36 @@ contract PayrollManager is ReentrancyGuard {
     );
     event Withdrawn(uint256 indexed streamId, address indexed employee, uint128 amount);
     event StreamToppedUp(uint256 indexed streamId, address indexed employer, uint128 amount);
-    event StreamCancelled(uint256 indexed streamId, address indexed employer, uint128 refunded);
+    event CancellationRequested(
+        uint256 indexed streamId,
+        uint64 indexed nonce,
+        address indexed employer,
+        uint128 accruedPaid,
+        uint128 escrowedRefund,
+        uint64 appealDeadline,
+        bytes32 caseId,
+        string reason
+    );
+    event CancellationAppealed(
+        uint256 indexed streamId,
+        uint64 indexed nonce,
+        address indexed employee,
+        bytes32 caseId,
+        bytes32 evidenceHash,
+        string evidenceUri,
+        uint64 adjudicationDeadline
+    );
+    event CancellationResolved(
+        uint256 indexed streamId,
+        uint64 indexed nonce,
+        bytes32 indexed caseId,
+        bool appealUpheld,
+        uint128 refunded,
+        bytes32 verdictHash
+    );
+    event CancellationFinalized(
+        uint256 indexed streamId, uint64 indexed nonce, CancellationStatus status, uint128 refunded
+    );
 
     event RequestCreated(
         uint256 indexed requestId,
@@ -95,19 +162,18 @@ contract PayrollManager is ReentrancyGuard {
         string invoiceRef
     );
     event RequestCountered(
-        uint256 indexed requestId,
-        uint128 ratePerSecond,
-        uint128 deposit,
-        uint64 startAt,
-        uint64 counterDeadline
+        uint256 indexed requestId, uint128 ratePerSecond, uint128 deposit, uint64 startAt, uint64 counterDeadline
     );
     event RequestAccepted(uint256 indexed requestId, uint256 indexed streamId);
     event RequestRejected(uint256 indexed requestId, address indexed by);
     event RequestCancelled(uint256 indexed requestId, address indexed by);
     event RequestExpired(uint256 indexed requestId, uint128 refunded);
 
-    constructor(address _usdc) {
+    constructor(address _usdc, address _adjudicator) {
+        require(_usdc != address(0), "invalid usdc");
+        require(_adjudicator != address(0), "invalid adjudicator");
         usdc = IERC20(_usdc);
+        adjudicator = _adjudicator;
     }
 
     /// @notice Employer creates a new payroll stream. Must pre-approve USDC transfer.
@@ -157,10 +223,7 @@ contract PayrollManager is ReentrancyGuard {
     ) external nonReentrant returns (uint256[] memory streamIds) {
         uint256 n = employees.length;
         require(n > 0, "no streams");
-        require(
-            ratesPerSecond.length == n && deposits.length == n && invoiceRefs.length == n,
-            "length mismatch"
-        );
+        require(ratesPerSecond.length == n && deposits.length == n && invoiceRefs.length == n, "length mismatch");
 
         // Validate every row and total the escrow BEFORE moving any funds, so an
         // invalid entry reverts the batch without a wasted transfer.
@@ -175,14 +238,8 @@ contract PayrollManager is ReentrancyGuard {
 
         streamIds = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
-            streamIds[i] = _openStream(
-                msg.sender,
-                employees[i],
-                ratesPerSecond[i],
-                deposits[i],
-                invoiceRefs[i],
-                startAt
-            );
+            streamIds[i] =
+                _openStream(msg.sender, employees[i], ratesPerSecond[i], deposits[i], invoiceRefs[i], startAt);
         }
     }
 
@@ -280,6 +337,7 @@ contract PayrollManager is ReentrancyGuard {
         Stream storage s = streams[streamId];
         require(msg.sender == s.employer, "not employer");
         require(amount > 0, "amount must be > 0");
+        require(!_cancellationOpen(streamId), "cancellation pending");
 
         usdc.transferFrom(msg.sender, address(this), amount);
 
@@ -291,8 +349,7 @@ contract PayrollManager is ReentrancyGuard {
             uint128 unstreamed = s.deposit - owed; // future money, before this top-up
 
             // Runway (seconds) left at the current rate — same formula as runway().
-            uint256 remainingRunway =
-                s.ratePerSecond > 0 ? uint256(unstreamed) / s.ratePerSecond : 0;
+            uint256 remainingRunway = s.ratePerSecond > 0 ? uint256(unstreamed) / s.ratePerSecond : 0;
 
             uint128 newRate;
             if (remainingRunway > 0) {
@@ -334,26 +391,121 @@ contract PayrollManager is ReentrancyGuard {
         emit StreamToppedUp(streamId, msg.sender, amount);
     }
 
-    /// @notice Employer cancels a stream. Accrued amount goes to employee, remainder refunded.
-    function cancelStream(uint256 streamId) external nonReentrant {
+    /// @notice Payer requests cancellation. Accrued USDC is paid immediately,
+    /// while the unstreamed remainder stays escrowed for the payee's 24-hour
+    /// appeal window.
+    function requestCancellation(uint256 streamId, string calldata reason) external nonReentrant {
         Stream storage s = streams[streamId];
         require(msg.sender == s.employer, "not employer");
         require(s.active, "already inactive");
+        require(!_cancellationOpen(streamId), "cancellation pending");
+        require(bytes(reason).length >= 20, "reason too short");
+        require(bytes(reason).length <= 1000, "reason too long");
 
         uint128 owed = _accrued(s);
         uint128 refund = s.deposit - owed;
+        require(refund > 0, "nothing unstreamed to cancel");
 
-        // Record the final payout so cumulative accounting (withdrawn / streamed)
-        // stays exact after a cancel, and advance the claim clock to match.
+        // Settle everything earned up to the cancellation request. The remaining
+        // deposit is deliberately retained by this contract until the appeal
+        // lifecycle reaches a terminal outcome.
         s.withdrawn += owed;
         s.lastClaimTime = uint64(block.timestamp);
         s.active = false;
-        s.deposit = 0;
+        s.deposit = refund;
 
         if (owed > 0) usdc.transfer(s.employee, owed);
-        if (refund > 0) usdc.transfer(s.employer, refund);
 
-        emit StreamCancelled(streamId, msg.sender, refund);
+        _openCancellation(streamId, owed, refund, reason);
+    }
+
+    /// @notice Payee files an evidence commitment during the 24-hour appeal
+    /// window. The URI must resolve to the same bytes committed by evidenceHash
+    /// when GenLayer validators adjudicate the case.
+    function appealCancellation(uint256 streamId, string calldata evidenceUri, bytes32 evidenceHash) external {
+        Stream storage s = streams[streamId];
+        Cancellation storage c = cancellations[streamId];
+        require(msg.sender == s.employee, "not employee");
+        require(c.status == CancellationStatus.AppealWindow, "not appealable");
+        require(block.timestamp <= c.appealDeadline, "appeal window closed");
+        require(bytes(evidenceUri).length >= 8, "evidence uri too short");
+        require(bytes(evidenceUri).length <= 500, "evidence uri too long");
+        require(evidenceHash != bytes32(0), "invalid evidence hash");
+
+        c.status = CancellationStatus.Appealed;
+        c.evidenceHash = evidenceHash;
+        c.evidenceUri = evidenceUri;
+        c.adjudicationDeadline = uint64(block.timestamp) + ADJUDICATION_TIMEOUT;
+
+        emit CancellationAppealed(
+            streamId,
+            c.nonce,
+            msg.sender,
+            cancellationCaseId(streamId),
+            evidenceHash,
+            evidenceUri,
+            c.adjudicationDeadline
+        );
+    }
+
+    /// @notice Relays a finalized GenLayer verdict into the Arc escrow.
+    /// The configured adjudicator may only choose between the two pre-defined
+    /// outcomes; it cannot change balances, parties, rates, or stream terms.
+    function resolveCancellation(uint256 streamId, bool appealUpheld, bytes32 verdictHash) external nonReentrant {
+        require(msg.sender == adjudicator, "not adjudicator");
+        require(verdictHash != bytes32(0), "invalid verdict hash");
+
+        Stream storage s = streams[streamId];
+        Cancellation storage c = cancellations[streamId];
+        require(c.status == CancellationStatus.Appealed, "not adjudicating");
+        require(block.timestamp <= c.adjudicationDeadline, "adjudication timed out");
+
+        uint128 refund;
+        c.verdictHash = verdictHash;
+        if (appealUpheld) {
+            c.status = CancellationStatus.AppealUpheld;
+            s.active = true;
+            uint64 now_ = uint64(block.timestamp);
+            s.lastClaimTime = s.startTime > now_ ? s.startTime : now_;
+        } else {
+            c.status = CancellationStatus.AppealRejected;
+            refund = _releaseCancellationRefund(s, c);
+        }
+
+        emit CancellationResolved(streamId, c.nonce, cancellationCaseId(streamId), appealUpheld, refund, verdictHash);
+    }
+
+    /// @notice Anyone may refund an unappealed cancellation after 24 hours.
+    function finalizeUnappealedCancellation(uint256 streamId) external nonReentrant {
+        Stream storage s = streams[streamId];
+        Cancellation storage c = cancellations[streamId];
+        require(c.status == CancellationStatus.AppealWindow, "not awaiting appeal");
+        require(block.timestamp > c.appealDeadline, "appeal window open");
+
+        c.status = CancellationStatus.Unappealed;
+        uint128 refund = _releaseCancellationRefund(s, c);
+        emit CancellationFinalized(streamId, c.nonce, c.status, refund);
+    }
+
+    /// @notice Prevents a failed relay or unavailable adjudicator from locking
+    /// payer funds forever. Anyone may refund after the bounded verdict timeout.
+    function finalizeTimedOutAppeal(uint256 streamId) external nonReentrant {
+        Stream storage s = streams[streamId];
+        Cancellation storage c = cancellations[streamId];
+        require(c.status == CancellationStatus.Appealed, "not adjudicating");
+        require(block.timestamp > c.adjudicationDeadline, "adjudication active");
+
+        c.status = CancellationStatus.TimedOut;
+        uint128 refund = _releaseCancellationRefund(s, c);
+        emit CancellationFinalized(streamId, c.nonce, c.status, refund);
+    }
+
+    /// @notice Deterministic cross-chain case key used by both Arc and the
+    /// GenLayer intelligent contract. The nonce prevents replay if a resumed
+    /// stream is cancelled again later.
+    function cancellationCaseId(uint256 streamId) public view returns (bytes32) {
+        Cancellation storage c = cancellations[streamId];
+        return keccak256(abi.encode(block.chainid, address(this), streamId, c.nonce));
     }
 
     /// @notice How much USDC has accrued since last claim (capped at deposit).
@@ -375,6 +527,49 @@ contract PayrollManager is ReentrancyGuard {
 
     function getEmployeeStreams(address employee) external view returns (uint256[] memory) {
         return employeeStreams[employee];
+    }
+
+    function _cancellationOpen(uint256 streamId) internal view returns (bool) {
+        CancellationStatus status = cancellations[streamId].status;
+        return status == CancellationStatus.AppealWindow || status == CancellationStatus.Appealed;
+    }
+
+    function _openCancellation(uint256 streamId, uint128 accruedPaid, uint128 escrowedRefund, string calldata reason)
+        internal
+    {
+        uint64 nonce = ++cancellationNonces[streamId];
+        uint64 requestedAt = uint64(block.timestamp);
+        uint64 appealDeadline = requestedAt + APPEAL_WINDOW;
+        cancellations[streamId] = Cancellation({
+            nonce: nonce,
+            requestedAt: requestedAt,
+            appealDeadline: appealDeadline,
+            adjudicationDeadline: 0,
+            escrowedRefund: escrowedRefund,
+            status: CancellationStatus.AppealWindow,
+            evidenceHash: bytes32(0),
+            verdictHash: bytes32(0),
+            reason: reason,
+            evidenceUri: ""
+        });
+
+        emit CancellationRequested(
+            streamId,
+            nonce,
+            msg.sender,
+            accruedPaid,
+            escrowedRefund,
+            appealDeadline,
+            cancellationCaseId(streamId),
+            reason
+        );
+    }
+
+    function _releaseCancellationRefund(Stream storage s, Cancellation storage c) internal returns (uint128 refund) {
+        refund = c.escrowedRefund;
+        c.escrowedRefund = 0;
+        s.deposit = 0;
+        if (refund > 0) usdc.transfer(s.employer, refund);
     }
 
     // ---- Stream requests + negotiation ----------------------------------
@@ -435,12 +630,10 @@ contract PayrollManager is ReentrancyGuard {
     ///         the new deposit immediately. Because funds are pre-committed, the
     ///         payee accepting the counter starts the stream with no further
     ///         payer signature. The offer auto-expires after COUNTER_WINDOW.
-    function counterRequest(
-        uint256 requestId,
-        uint128 newRate,
-        uint128 newDeposit,
-        uint64 newStartAt
-    ) external nonReentrant {
+    function counterRequest(uint256 requestId, uint128 newRate, uint128 newDeposit, uint64 newStartAt)
+        external
+        nonReentrant
+    {
         StreamRequest storage r = requests[requestId];
         require(msg.sender == r.payer, "not payer");
         require(r.status == ReqStatus.Pending, "not pending");

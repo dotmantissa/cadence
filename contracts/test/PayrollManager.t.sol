@@ -41,24 +41,58 @@ contract PayrollManagerTest is Test {
 
     address employer = address(0x1);
     address employee = address(0x2);
+    address adjudicator = address(0x3);
 
     uint128 constant RATE = 1e6; // $1/sec
     uint128 constant DEPOSIT = 3600e6; // $3600 = 1 hour
 
     function setUp() public {
         usdc = new MockUSDC();
-        payroll = new PayrollManager(address(usdc));
+        payroll = new PayrollManager(address(usdc), adjudicator);
 
         usdc.mint(employer, 10000e6);
         vm.prank(employer);
         usdc.approve(address(payroll), type(uint256).max);
     }
 
+    function _createAndRequestCancellation() internal returns (uint256 id) {
+        vm.prank(employer);
+        id = payroll.createStream(employee, RATE, DEPOSIT, "INV-APPEAL", 0);
+        vm.warp(block.timestamp + 10);
+        vm.prank(employer);
+        payroll.requestCancellation(id, "The payer claims the remaining work was terminated before completion.");
+    }
+
+    function _appeal(uint256 id) internal {
+        vm.prank(employee);
+        payroll.appealCancellation(id, "https://evidence.example/cadence/appeal.json", keccak256("committed evidence"));
+    }
+
+    function _cancellationStatus(uint256 id) internal view returns (PayrollManager.CancellationStatus status) {
+        (,,,,, PayrollManager.CancellationStatus current,,,,) = payroll.cancellations(id);
+        return current;
+    }
+
+    function _appealDeadline(uint256 id) internal view returns (uint64 deadline) {
+        (,, uint64 appealBy,,,,,,,) = payroll.cancellations(id);
+        return appealBy;
+    }
+
+    function _adjudicationDeadline(uint256 id) internal view returns (uint64 deadline) {
+        (,,, uint64 adjudicateBy,,,,,,) = payroll.cancellations(id);
+        return adjudicateBy;
+    }
+
+    function _cancellationEscrow(uint256 id) internal view returns (uint128 escrow) {
+        (,,,, uint128 held,,,,,) = payroll.cancellations(id);
+        return held;
+    }
+
     function test_CreateStream() public {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", 0);
 
-        (address emp,,,,,,,,bool active,) = payroll.streams(id);
+        (address emp,,,,,,,, bool active,) = payroll.streams(id);
         assertEq(emp, employer);
         assertTrue(active);
     }
@@ -90,7 +124,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employee);
         payroll.withdraw(id);
 
-        (, , , , , , , , bool active,) = payroll.streams(id);
+        (,,,,,,,, bool active,) = payroll.streams(id);
         assertFalse(active);
 
         usdc.mint(employer, 1000e6);
@@ -99,13 +133,13 @@ contract PayrollManagerTest is Test {
         vm.prank(employer);
         payroll.topUp(id, 1000e6);
 
-        (, , , , , , , , bool activeAfter,) = payroll.streams(id);
+        (,,,,,,,, bool activeAfter,) = payroll.streams(id);
         assertTrue(activeAfter);
     }
 
     /// Reads just the per-second rate (tuple index 2).
     function _rate(uint256 id) internal view returns (uint128 rate) {
-        (, , uint128 r, , , , , , ,) = payroll.streams(id);
+        (,, uint128 r,,,,,,,) = payroll.streams(id);
         return r;
     }
 
@@ -209,7 +243,7 @@ contract PayrollManagerTest is Test {
         payroll.topUp(id, DEPOSIT);
 
         assertEq(_rate(id), RATE); // rate untouched
-        (, , , uint64 startTime, , uint128 deposit, , , ,) = payroll.streams(id);
+        (,,, uint64 startTime,, uint128 deposit,,,,) = payroll.streams(id);
         assertEq(startTime, start); // start untouched
         assertEq(deposit, DEPOSIT * 2); // both deposits present
         // Runway now spans the doubled deposit (extends past the original end).
@@ -238,7 +272,7 @@ contract PayrollManagerTest is Test {
         assertEq(payroll.runway(id), 3600); // fresh runway on the new funds
     }
 
-    function test_CancelStream() public {
+    function test_RequestCancellation_PaysAccruedAndHoldsRefund() public {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", 0);
 
@@ -247,10 +281,237 @@ contract PayrollManagerTest is Test {
         uint256 emplBefore = usdc.balanceOf(employer);
 
         vm.prank(employer);
-        payroll.cancelStream(id);
+        payroll.requestCancellation(id, "The engagement ended before the remaining scheduled work.");
 
         assertEq(usdc.balanceOf(employee) - empBefore, 10e6); // 10 sec accrued
-        assertEq(usdc.balanceOf(employer) - emplBefore, DEPOSIT - 10e6); // remainder refunded
+        assertEq(usdc.balanceOf(employer), emplBefore); // no immediate refund
+        assertEq(usdc.balanceOf(address(payroll)), DEPOSIT - 10e6); // held for appeal
+
+        (,,,,, uint128 remaining,, uint128 withdrawn, bool active,) = payroll.streams(id);
+        assertEq(remaining, DEPOSIT - 10e6);
+        assertEq(withdrawn, 10e6);
+        assertFalse(active);
+
+        (
+            ,
+            uint64 requestedAt,
+            uint64 appealDeadline,,
+            uint128 escrowedRefund,
+            PayrollManager.CancellationStatus status,,,,
+        ) = payroll.cancellations(id);
+        assertEq(appealDeadline, requestedAt + 24 hours);
+        assertEq(escrowedRefund, DEPOSIT - 10e6);
+        assertEq(uint8(status), uint8(PayrollManager.CancellationStatus.AppealWindow));
+    }
+
+    function test_RequestCancellation_OnlyEmployer() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        vm.prank(employee);
+        vm.expectRevert("not employer");
+        payroll.requestCancellation(id, "The payee cannot request a payer-side cancellation.");
+    }
+
+    function test_RequestCancellation_RequiresSpecificReason() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
+
+        vm.prank(employer);
+        vm.expectRevert("reason too short");
+        payroll.requestCancellation(id, "ended");
+    }
+
+    function test_RequestCancellation_RevertsWhenNothingIsUnstreamed() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, RATE, "INV", 0);
+        vm.warp(block.timestamp + 1);
+
+        vm.prank(employer);
+        vm.expectRevert("nothing unstreamed to cancel");
+        payroll.requestCancellation(id, "The payer cannot appeal money that the payee has already fully earned.");
+    }
+
+    function test_CancellationPauseBlocksWithdrawAndTopUp() public {
+        uint256 id = _createAndRequestCancellation();
+
+        vm.prank(employee);
+        vm.expectRevert("stream not active");
+        payroll.withdraw(id);
+
+        vm.prank(employer);
+        vm.expectRevert("cancellation pending");
+        payroll.topUp(id, 100e6);
+
+        _appeal(id);
+        vm.prank(employer);
+        vm.expectRevert("cancellation pending");
+        payroll.topUp(id, 100e6);
+    }
+
+    function test_Appeal_OnlyPayee() public {
+        uint256 id = _createAndRequestCancellation();
+
+        vm.prank(employer);
+        vm.expectRevert("not employee");
+        payroll.appealCancellation(id, "https://evidence.example/cadence/appeal.json", keccak256("evidence"));
+    }
+
+    function test_Appeal_AcceptsExactDeadlineAndRejectsAfter() public {
+        uint256 id = _createAndRequestCancellation();
+        vm.warp(_appealDeadline(id));
+        _appeal(id);
+        assertEq(uint8(_cancellationStatus(id)), uint8(PayrollManager.CancellationStatus.Appealed));
+
+        vm.prank(adjudicator);
+        payroll.resolveCancellation(id, true, keccak256("first verdict"));
+
+        vm.prank(employer);
+        payroll.requestCancellation(id, "A second cancellation request creates a new independent appeal window.");
+        vm.warp(uint256(_appealDeadline(id)) + 1);
+
+        vm.prank(employee);
+        vm.expectRevert("appeal window closed");
+        payroll.appealCancellation(id, "https://evidence.example/cadence/appeal-two.json", keccak256("second evidence"));
+    }
+
+    function test_Appeal_RequiresEvidenceCommitment() public {
+        uint256 id = _createAndRequestCancellation();
+
+        vm.prank(employee);
+        vm.expectRevert("invalid evidence hash");
+        payroll.appealCancellation(id, "https://evidence.example/cadence/appeal.json", bytes32(0));
+    }
+
+    function test_FinalizeUnappealed_IsPermissionlessAfterWindow() public {
+        uint256 id = _createAndRequestCancellation();
+        uint256 payerBefore = usdc.balanceOf(employer);
+
+        vm.expectRevert("appeal window open");
+        payroll.finalizeUnappealedCancellation(id);
+
+        vm.warp(uint256(_appealDeadline(id)) + 1);
+        vm.prank(address(0xBEEF));
+        payroll.finalizeUnappealedCancellation(id);
+
+        assertEq(uint8(_cancellationStatus(id)), uint8(PayrollManager.CancellationStatus.Unappealed));
+        assertEq(usdc.balanceOf(employer) - payerBefore, DEPOSIT - 10e6);
+        assertEq(_cancellationEscrow(id), 0);
+        assertEq(_remaining(id), 0);
+    }
+
+    function test_ResolveCancellation_OnlyAdjudicator() public {
+        uint256 id = _createAndRequestCancellation();
+        _appeal(id);
+
+        vm.prank(employee);
+        vm.expectRevert("not adjudicator");
+        payroll.resolveCancellation(id, true, keccak256("verdict"));
+    }
+
+    function test_AppealUpheld_ResumesWithoutBackpayForPausedTime() public {
+        uint256 id = _createAndRequestCancellation();
+        _appeal(id);
+        uint128 held = _remaining(id);
+
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(adjudicator);
+        payroll.resolveCancellation(id, true, keccak256("appeal upheld verdict"));
+
+        (,,,, uint64 claimAnchor, uint128 deposit,, uint128 withdrawn, bool active,) = payroll.streams(id);
+        assertTrue(active);
+        assertEq(deposit, held);
+        assertEq(withdrawn, 10e6);
+        assertEq(claimAnchor, uint64(block.timestamp));
+        assertEq(payroll.accrued(id), 0); // dispute interval is not retroactively charged
+
+        vm.warp(block.timestamp + 25);
+        assertEq(payroll.accrued(id), 25e6);
+        assertEq(uint8(_cancellationStatus(id)), uint8(PayrollManager.CancellationStatus.AppealUpheld));
+    }
+
+    function test_AppealRejected_RefundsHeldEscrow() public {
+        uint256 id = _createAndRequestCancellation();
+        _appeal(id);
+        uint256 payerBefore = usdc.balanceOf(employer);
+        uint128 held = _cancellationEscrow(id);
+
+        vm.prank(adjudicator);
+        payroll.resolveCancellation(id, false, keccak256("appeal rejected verdict"));
+
+        assertEq(usdc.balanceOf(employer) - payerBefore, held);
+        assertEq(usdc.balanceOf(address(payroll)), 0);
+        assertEq(_remaining(id), 0);
+        assertEq(uint8(_cancellationStatus(id)), uint8(PayrollManager.CancellationStatus.AppealRejected));
+    }
+
+    function test_ResolveCancellation_CannotReplayVerdict() public {
+        uint256 id = _createAndRequestCancellation();
+        _appeal(id);
+
+        vm.prank(adjudicator);
+        payroll.resolveCancellation(id, true, keccak256("verdict"));
+
+        vm.prank(adjudicator);
+        vm.expectRevert("not adjudicating");
+        payroll.resolveCancellation(id, false, keccak256("replay"));
+    }
+
+    function test_TimedOutAppeal_RefundsPermissionlessly() public {
+        uint256 id = _createAndRequestCancellation();
+        _appeal(id);
+        uint256 payerBefore = usdc.balanceOf(employer);
+
+        vm.expectRevert("adjudication active");
+        payroll.finalizeTimedOutAppeal(id);
+
+        vm.warp(uint256(_adjudicationDeadline(id)) + 1);
+        vm.prank(address(0xBEEF));
+        payroll.finalizeTimedOutAppeal(id);
+
+        assertEq(usdc.balanceOf(employer) - payerBefore, DEPOSIT - 10e6);
+        assertEq(uint8(_cancellationStatus(id)), uint8(PayrollManager.CancellationStatus.TimedOut));
+
+        vm.prank(adjudicator);
+        vm.expectRevert("not adjudicating");
+        payroll.resolveCancellation(id, true, keccak256("late verdict"));
+    }
+
+    function test_RepeatedCancellationUsesUniqueCaseId() public {
+        uint256 id = _createAndRequestCancellation();
+        bytes32 firstCase = payroll.cancellationCaseId(id);
+        _appeal(id);
+        vm.prank(adjudicator);
+        payroll.resolveCancellation(id, true, keccak256("first verdict"));
+
+        vm.warp(block.timestamp + 5);
+        vm.prank(employer);
+        payroll.requestCancellation(id, "New post-reinstatement facts support a distinct cancellation request.");
+        bytes32 secondCase = payroll.cancellationCaseId(id);
+
+        assertNotEq(firstCase, secondCase);
+        assertEq(payroll.cancellationNonces(id), 2);
+    }
+
+    function test_ScheduledAppealUpheld_PreservesFutureStart() public {
+        uint64 start = uint64(block.timestamp + 3 days);
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", start);
+        vm.prank(employer);
+        payroll.requestCancellation(id, "The payer sought to end the engagement before its future scheduled start.");
+        _appeal(id);
+
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(adjudicator);
+        payroll.resolveCancellation(id, true, keccak256("scheduled appeal upheld"));
+
+        (,,,, uint64 claimAnchor,,,, bool active,) = payroll.streams(id);
+        assertTrue(active);
+        assertEq(claimAnchor, start);
+        assertEq(payroll.accrued(id), 0);
+
+        vm.warp(start + 10);
+        assertEq(payroll.accrued(id), 10e6);
     }
 
     function test_RunwayDecreases() public {
@@ -269,7 +530,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", start);
 
-        (, , , uint64 startTime, uint64 lastClaim, , , , bool active,) = payroll.streams(id);
+        (,,, uint64 startTime, uint64 lastClaim,,,, bool active,) = payroll.streams(id);
         assertEq(startTime, start);
         assertEq(lastClaim, start);
         assertTrue(active); // active, but not yet flowing
@@ -305,7 +566,7 @@ contract PayrollManagerTest is Test {
         payroll.withdraw(id);
     }
 
-    function test_ScheduledStream_CancelBeforeStartRefundsAll() public {
+    function test_ScheduledStream_CancellationBeforeStartHoldsAll() public {
         uint64 start = uint64(block.timestamp + 1 days);
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", start);
@@ -315,10 +576,11 @@ contract PayrollManagerTest is Test {
 
         vm.warp(block.timestamp + 1 hours); // still before start
         vm.prank(employer);
-        payroll.cancelStream(id);
+        payroll.requestCancellation(id, "The future engagement was terminated before its scheduled start.");
 
         assertEq(usdc.balanceOf(employee) - empBefore, 0); // employee got nothing
-        assertEq(usdc.balanceOf(employer) - emplBefore, DEPOSIT); // full refund
+        assertEq(usdc.balanceOf(employer), emplBefore); // full deposit remains held
+        assertEq(usdc.balanceOf(address(payroll)), DEPOSIT);
     }
 
     function test_PastStartAtClampsToNow() public {
@@ -327,7 +589,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", past);
 
-        (, , , uint64 startTime,,,,,,) = payroll.streams(id);
+        (,,, uint64 startTime,,,,,,) = payroll.streams(id);
         assertEq(startTime, uint64(block.timestamp)); // clamped to now, not 500s ago
         assertEq(payroll.accrued(id), 0);
     }
@@ -347,16 +609,8 @@ contract PayrollManagerTest is Test {
         vm.prank(employee);
         uint256 reqId = payroll.requestStream(employer, RATE, DEPOSIT, "INV-REQ", 0);
 
-        (
-            address payee,
-            address payer,
-            uint128 rate,
-            uint128 deposit,
-            ,
-            ,
-            PayrollManager.ReqStatus status,
-            ,
-        ) = payroll.requests(reqId);
+        (address payee, address payer, uint128 rate, uint128 deposit,,, PayrollManager.ReqStatus status,,) =
+            payroll.requests(reqId);
         assertEq(payee, employee);
         assertEq(payer, employer);
         assertEq(rate, RATE);
@@ -383,13 +637,13 @@ contract PayrollManagerTest is Test {
         // Funds escrowed into the contract.
         assertEq(usdc.balanceOf(address(payroll)), DEPOSIT);
 
-        (address emp, address wrk, uint128 rate, , , , , , bool active,) = payroll.streams(streamId);
+        (address emp, address wrk, uint128 rate,,,,,, bool active,) = payroll.streams(streamId);
         assertEq(emp, employer);
         assertEq(wrk, employee);
         assertEq(rate, RATE);
         assertTrue(active);
 
-        (, , , , , , PayrollManager.ReqStatus status, , uint256 sId) = payroll.requests(reqId);
+        (,,,,,, PayrollManager.ReqStatus status,, uint256 sId) = payroll.requests(reqId);
         assertEq(uint8(status), uint8(PayrollManager.ReqStatus.Accepted));
         assertEq(sId, streamId);
 
@@ -414,7 +668,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employer);
         payroll.rejectRequest(reqId);
 
-        (, , , , , , PayrollManager.ReqStatus status, ,) = payroll.requests(reqId);
+        (,,,,,, PayrollManager.ReqStatus status,,) = payroll.requests(reqId);
         assertEq(uint8(status), uint8(PayrollManager.ReqStatus.Rejected));
         assertEq(usdc.balanceOf(address(payroll)), 0);
 
@@ -431,7 +685,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employee);
         payroll.cancelRequest(reqId);
 
-        (, , , , , , PayrollManager.ReqStatus status, ,) = payroll.requests(reqId);
+        (,,,,,, PayrollManager.ReqStatus status,,) = payroll.requests(reqId);
         assertEq(uint8(status), uint8(PayrollManager.ReqStatus.Cancelled));
 
         // Payer can no longer accept a cancelled request.
@@ -453,16 +707,8 @@ contract PayrollManagerTest is Test {
         // New deposit is escrowed immediately.
         assertEq(usdc.balanceOf(address(payroll)), newDeposit);
 
-        (
-            ,
-            ,
-            uint128 rate,
-            uint128 deposit,
-            ,
-            uint64 deadline,
-            PayrollManager.ReqStatus status,
-            ,
-        ) = payroll.requests(reqId);
+        (,, uint128 rate, uint128 deposit,, uint64 deadline, PayrollManager.ReqStatus status,,) =
+            payroll.requests(reqId);
         assertEq(rate, newRate);
         assertEq(deposit, newDeposit);
         assertEq(uint8(status), uint8(PayrollManager.ReqStatus.Countered));
@@ -482,7 +728,7 @@ contract PayrollManagerTest is Test {
         vm.prank(employee);
         uint256 streamId = payroll.acceptCounter(reqId);
 
-        (address emp, address wrk, uint128 rate, , , , , , bool active,) = payroll.streams(streamId);
+        (address emp, address wrk, uint128 rate,,,,,, bool active,) = payroll.streams(streamId);
         assertEq(emp, employer);
         assertEq(wrk, employee);
         assertEq(rate, newRate);
@@ -532,7 +778,7 @@ contract PayrollManagerTest is Test {
         assertEq(usdc.balanceOf(employer), payerBefore);
         assertEq(usdc.balanceOf(address(payroll)), 0);
 
-        (, , , , , , PayrollManager.ReqStatus status, ,) = payroll.requests(reqId);
+        (,,,,,, PayrollManager.ReqStatus status,,) = payroll.requests(reqId);
         assertEq(uint8(status), uint8(PayrollManager.ReqStatus.Rejected));
     }
 
@@ -557,7 +803,7 @@ contract PayrollManagerTest is Test {
         assertEq(usdc.balanceOf(employer), payerBefore);
         assertEq(usdc.balanceOf(address(payroll)), 0);
 
-        (, , , , , , PayrollManager.ReqStatus status, ,) = payroll.requests(reqId);
+        (,,,,,, PayrollManager.ReqStatus status,,) = payroll.requests(reqId);
         assertEq(uint8(status), uint8(PayrollManager.ReqStatus.Expired));
 
         // And an expired counter can no longer be accepted.
@@ -584,12 +830,12 @@ contract PayrollManagerTest is Test {
 
     /// Reads the two new accounting fields (indexes 6 and 7) from the tuple.
     function _accounting(uint256 id) internal view returns (uint128 totalDeposited, uint128 withdrawn) {
-        (, , , , , , uint128 total, uint128 wd, ,) = payroll.streams(id);
+        (,,,,,, uint128 total, uint128 wd,,) = payroll.streams(id);
         return (total, wd);
     }
 
     function _remaining(uint256 id) internal view returns (uint128 deposit) {
-        (, , , , , uint128 dep, , , ,) = payroll.streams(id);
+        (,,,,, uint128 dep,,,,) = payroll.streams(id);
         return dep;
     }
 
@@ -675,23 +921,23 @@ contract PayrollManagerTest is Test {
         payroll.withdraw(id);
     }
 
-    function test_CancelRecordsFinalPayoutInWithdrawn() public {
+    function test_CancellationRecordsAccruedPayoutInWithdrawn() public {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
 
         vm.warp(block.timestamp + 10);
         vm.prank(employer);
-        payroll.cancelStream(id);
+        payroll.requestCancellation(id, "The payer states the underlying engagement has been terminated.");
 
         (uint128 total, uint128 withdrawn) = _accounting(id);
         assertEq(total, DEPOSIT); // original commitment preserved for the receipt
-        assertEq(withdrawn, 10e6); // the 10s paid out on cancel is recorded
-        assertEq(_remaining(id), 0);
+        assertEq(withdrawn, 10e6); // the 10s paid at the freeze is recorded
+        assertEq(_remaining(id), DEPOSIT - 10e6); // unstreamed escrow stays held
     }
 
-    function test_ContractNeverStrandsFunds_Invariant() public {
-        // After a full lifecycle (create, partial withdraw, cancel) the contract
-        // holds exactly zero — everything is either paid out or refunded.
+    function test_ContractNeverStrandsFunds_AfterUnappealedFinalization() public {
+        // After create, partial withdraw, cancellation, and expiry, everything
+        // is either paid to the payee or refunded to the payer.
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV", 0);
 
@@ -701,7 +947,10 @@ contract PayrollManagerTest is Test {
 
         vm.warp(block.timestamp + 50);
         vm.prank(employer);
-        payroll.cancelStream(id);
+        payroll.requestCancellation(id, "The payer states the remaining engagement has been terminated.");
+
+        vm.warp(block.timestamp + 24 hours + 1);
+        payroll.finalizeUnappealedCancellation(id);
 
         assertEq(usdc.balanceOf(address(payroll)), 0);
         // Employee got 150s total; employer refunded the rest of the original.
@@ -744,8 +993,7 @@ contract PayrollManagerTest is Test {
 
         // Each stream is recorded with the CALLER as employer (not an aggregator).
         for (uint256 i = 0; i < 3; i++) {
-            (address emp, address rcv, uint128 rate, , , , uint128 total, , bool active,) =
-                payroll.streams(ids[i]);
+            (address emp, address rcv, uint128 rate,,,, uint128 total,, bool active,) = payroll.streams(ids[i]);
             assertEq(emp, employer);
             assertEq(rcv, emps[i]);
             assertEq(rate, rates[i]);
@@ -830,7 +1078,7 @@ contract PayrollManagerTest is Test {
         uint256[] memory ids = payroll.createStreams(emps, rates, deps, refs, startAt);
 
         for (uint256 i = 0; i < ids.length; i++) {
-            (, , , uint64 start, , , , , ,) = payroll.streams(ids[i]);
+            (,,, uint64 start,,,,,,) = payroll.streams(ids[i]);
             assertEq(uint256(start), uint256(startAt));
         }
     }

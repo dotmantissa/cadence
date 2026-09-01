@@ -1,0 +1,17 @@
+[project]
+name = "cadence-genlayer"
+version = "0.1.0"
+description = "GenLayer adjudication contract for Cadence stream cancellation appeals"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "genlayer-test==0.29.2",
+  "genvm-linter==0.11.0",
+  "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/direct"]
+addopts = "-v"

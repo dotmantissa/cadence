@@ -20,6 +20,12 @@ contracts/out/
 # TypeScript incremental build cache
 *.tsbuildinfo
 
+# Python / GenLayer test artifacts
+__pycache__/
+.pytest_cache/
+genlayer/artifacts/
+.venv/
+
 # Misc
 .DS_Store
 *.log

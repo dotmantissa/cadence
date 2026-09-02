@@ -54,6 +54,8 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const [totalAmount, setTotalAmount] = useState("");
   const [streamDays, setStreamDays] = useState("");
   const [invoiceRef, setInvoiceRef] = useState("");
+  const [deliverablesEnabled, setDeliverablesEnabled] = useState(false);
+  const [deliverables, setDeliverables] = useState("");
   const [startMode, setStartMode] = useState<"now" | "schedule">("now");
   const [startAtLocal, setStartAtLocal] = useState("");
   const [txStatus, setTxStatus] = useState<"idle" | "approving" | "creating">("idle");
@@ -246,7 +248,14 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         await approve(depositAmount);
       }
       setTxStatus("creating");
-      await createStream(singleRecipient, ratePerSecond, depositAmount, invoiceRef, startAt);
+      await createStream(
+        singleRecipient,
+        ratePerSecond,
+        depositAmount,
+        invoiceRef,
+        startAt,
+        deliverablesEnabled ? deliverables.trim() : ""
+      );
       notify("stream_started", {
         counterpartyAddress: singleRecipient,
         amount: depositAmount.toString(),
@@ -277,6 +286,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         deposit: p.deposit,
         invoiceRef: invoiceRef || "",
         startAt,
+        deliverables: deliverablesEnabled ? deliverables.trim() : "",
       }));
 
     const result = await batchCreate(batchPlan.total, streams);
@@ -586,6 +596,38 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
                 )}
               </p>
             </>
+          )}
+        </div>
+
+        <div className="border-t border-ink/10 pt-4">
+          <label className="flex cursor-pointer items-center justify-between gap-4">
+            <span>
+              <span className={labelCls}>Deliverables</span>
+              <span className="block text-xs text-ink/45">Set the work expected for this stream.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={deliverablesEnabled}
+              disabled={isPending}
+              onChange={(e) => setDeliverablesEnabled(e.target.checked)}
+              className="h-4 w-4 accent-volt"
+            />
+          </label>
+          {deliverablesEnabled && (
+            <div className="mt-3">
+              <textarea
+                value={deliverables}
+                disabled={isPending}
+                onChange={(e) => setDeliverables(e.target.value)}
+                maxLength={5000}
+                minLength={1}
+                rows={5}
+                placeholder="List the concrete outputs, acceptance criteria, and due dates."
+                className={field}
+                required
+              />
+              <p className="mt-1.5 text-right text-xs text-ink/40">{deliverables.length}/5000</p>
+            </div>
           )}
         </div>
 

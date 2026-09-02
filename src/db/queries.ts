@@ -1,8 +1,16 @@
 import "server-only";
 
-import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { db } from "./index";
-import { users, payees, streamDrafts } from "./schema";
+import {
+  users,
+  payees,
+  streamDrafts,
+  cancellationAppeals,
+  bantRooms,
+  bantMessages,
+  type AppealEvidenceSource,
+} from "./schema";
 import type { Caller } from "@/lib/privy-server";
 import { PROFILE_RESERVED, USERNAME_COOLDOWN_MS } from "@/lib/username";
 
@@ -350,6 +358,156 @@ export async function deletePayee(ownerId: string, id: string) {
     .where(and(eq(payees.id, id), eq(payees.ownerId, ownerId)))
     .returning();
   return row ?? null;
+}
+
+export async function getCancellationAppeal(caseId: string) {
+  const [row] = await db
+    .select()
+    .from(cancellationAppeals)
+    .where(eq(cancellationAppeals.caseId, caseId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function prepareCancellationAppeal(input: {
+  ownerId: string;
+  caseId: string;
+  streamId: string;
+  cancellationNonce: string;
+  payerAddress: string;
+  payeeAddress: string;
+  evidenceUri: string;
+  evidenceHash: string;
+  evidencePackage: string;
+  sources: AppealEvidenceSource[];
+}) {
+  const existing = await getCancellationAppeal(input.caseId);
+  if (existing) return existing;
+  const [row] = await db
+    .insert(cancellationAppeals)
+    .values(input)
+    .returning();
+  return row;
+}
+
+export async function updateCancellationAppeal(
+  caseId: string,
+  patch: Partial<{
+    status: string;
+    fileTxHash: string | null;
+    adjudicationTxHash: string | null;
+    relayTxHash: string | null;
+    bantUri: string | null;
+    bantHash: string | null;
+    verdict: Record<string, unknown> | null;
+    lastError: string | null;
+  }>
+) {
+  const [row] = await db
+    .update(cancellationAppeals)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(cancellationAppeals.caseId, caseId))
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Atomically claim one workflow transition. Only one concurrent dashboard poll
+ * can move a row out of the expected state and submit the next transaction.
+ */
+export async function claimCancellationAppeal(
+  caseId: string,
+  expectedStatuses: string[],
+  nextStatus: string
+) {
+  if (expectedStatuses.length === 0) return null;
+  const [row] = await db
+    .update(cancellationAppeals)
+    .set({ status: nextStatus, lastError: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(cancellationAppeals.caseId, caseId),
+        inArray(cancellationAppeals.status, expectedStatuses)
+      )
+    )
+    .returning();
+  return row ?? null;
+}
+
+export async function getBantRoom(caseId: string) {
+  const [row] = await db
+    .select()
+    .from(bantRooms)
+    .where(eq(bantRooms.caseId, caseId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getBantMessages(roomId: string) {
+  return db
+    .select()
+    .from(bantMessages)
+    .where(eq(bantMessages.roomId, roomId))
+    .orderBy(asc(bantMessages.createdAt));
+}
+
+export async function getBantMessageById(id: string) {
+  const [row] = await db
+    .select()
+    .from(bantMessages)
+    .where(eq(bantMessages.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function ensureBantRoom(input: {
+  caseId: string;
+  streamId: string;
+  payerAddress: string;
+  payeeAddress: string;
+  opensAt: Date;
+  closesAt: Date;
+}) {
+  const existing = await getBantRoom(input.caseId);
+  if (existing) return existing;
+  const [row] = await db
+    .insert(bantRooms)
+    .values(input)
+    .onConflictDoNothing({ target: bantRooms.caseId })
+    .returning();
+  return row ?? (await getBantRoom(input.caseId));
+}
+
+export async function addBantMessage(input: {
+  roomId: string;
+  authorUserId: string;
+  authorAddress: string;
+  body: string;
+  evidenceUrl?: string | null;
+  evidenceType?: string | null;
+  evidenceDescription?: string | null;
+  evidenceHash?: string | null;
+}) {
+  const [row] = await db.insert(bantMessages).values(input).returning();
+  return row;
+}
+
+export async function closeBantRoom(
+  caseId: string,
+  snapshot: string,
+  snapshotHash: string
+) {
+  const [row] = await db
+    .update(bantRooms)
+    .set({
+      status: "closed",
+      snapshot,
+      snapshotHash,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(bantRooms.caseId, caseId), eq(bantRooms.status, "open")))
+    .returning();
+  return row ?? (await getBantRoom(caseId));
 }
 
 export async function listDrafts(ownerId: string) {

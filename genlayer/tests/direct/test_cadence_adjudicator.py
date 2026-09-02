@@ -12,11 +12,15 @@ PAYER = "0x" + ("2" * 40)
 PAYEE = "0x" + ("3" * 40)
 PACKAGE_URL = "https://evidence.example/cadence/appeal.json"
 SOURCE_URL = "https://evidence.example/cadence/agreement.txt"
+BANT_URL = "https://evidence.example/cadence/bant.json"
+BANT_SOURCE_URL = "https://evidence.example/cadence/payer-record.txt"
 SOURCE_BODY = (
     "Signed statement of work: the payer engaged the payee through 30 September "
     "2026. Termination requires ten days written notice. The deliverable was "
     "accepted on 31 August 2026 and no notice was issued."
 ).encode()
+BANT_SOURCE_BODY = b"Timestamped payer record describing the disputed delivery."
+DELIVERABLES = "Deliver the signed integration, tests, and deployment notes."
 
 
 def _sha(body: bytes) -> str:
@@ -45,6 +49,34 @@ def _package(
                 "sha256": _sha(source_body),
                 "description": "Signed agreement and acceptance record",
             }
+        ],
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _bant(*, case_id: str = CASE_ID, author: str = PAYER, deliverables: str = DELIVERABLES) -> bytes:
+    payload = {
+        "case_id": "0x" + case_id,
+        "stream_id": "7",
+        "payer": PAYER,
+        "payee": PAYEE,
+        "deliverables": deliverables,
+        "messages": [
+            {
+                "author": author,
+                "body": "The payer states the submitted work did not meet the agreed acceptance criteria.",
+                "evidence": {
+                    "type": "communication",
+                    "url": BANT_SOURCE_URL,
+                    "sha256": _sha(BANT_SOURCE_BODY),
+                    "description": "Timestamped payer delivery record",
+                },
+            },
+            {
+                "author": PAYEE,
+                "body": "The payee states the integration and tests were delivered and accepted.",
+                "evidence": None,
+            },
         ],
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -108,6 +140,31 @@ def _file(
     return body
 
 
+def _file_with_bant(direct_vm, court, sender, *, bant_body: bytes | None = None):
+    package_body = _package()
+    transcript = bant_body or _bant()
+    direct_vm.sender = sender
+    court.file_appeal_with_bant(
+        CASE_ID,
+        5042002,
+        PAYROLL,
+        7,
+        1,
+        PAYER,
+        PAYEE,
+        1000000,
+        3590000000,
+        "INV-2026-091",
+        DELIVERABLES,
+        "The payer alleges the engagement ended before all work was completed.",
+        PACKAGE_URL,
+        _sha(package_body),
+        BANT_URL,
+        _sha(transcript),
+    )
+    return package_body, transcript
+
+
 def _mock_evidence(
     direct_vm,
     package_body: bytes,
@@ -126,6 +183,25 @@ def _mock_evidence(
     )
     direct_vm.mock_web(
         "^" + re.escape(source_url) + "$",
+        {
+            "status": 200,
+            "body": source_body,
+            "headers": {"content-type": "text/plain"},
+        },
+    )
+
+
+def _mock_bant(direct_vm, transcript: bytes, source_body: bytes = BANT_SOURCE_BODY):
+    direct_vm.mock_web(
+        "^" + re.escape(BANT_URL) + "$",
+        {
+            "status": 200,
+            "body": transcript,
+            "headers": {"content-type": "application/json"},
+        },
+    )
+    direct_vm.mock_web(
+        "^" + re.escape(BANT_SOURCE_URL) + "$",
         {
             "status": 200,
             "body": source_body,
@@ -251,6 +327,63 @@ def test_build_prompt_exposes_standard_and_prompt_injection_boundary(
     assert PAYROLL in prompt
     assert PAYER in prompt
     assert PAYEE in prompt
+
+
+def test_file_with_bant_stores_deliverables_and_transcript_binding(
+    court, direct_vm, direct_owner
+):
+    _file_with_bant(direct_vm, court, direct_owner)
+    saved = court.get_case(CASE_ID)
+
+    assert saved["deliverables"] == DELIVERABLES
+    assert saved["bant_uri"] == BANT_URL
+    assert saved["bant_hash"]
+    assert DELIVERABLES in court.build_case_prompt(CASE_ID)
+
+
+def test_bant_transcript_binding_is_enforced(court, direct_vm, direct_owner):
+    committed = _bant()
+    package_body, _ = _file_with_bant(
+        direct_vm, court, direct_owner, bant_body=committed
+    )
+    changed = _bant(author="0x" + ("9" * 40))
+    _mock_evidence(direct_vm, package_body)
+    _mock_bant(direct_vm, changed)
+    direct_vm.mock_llm(r".*", _verdict())
+
+    with direct_vm.expect_revert("hash does not match"):
+        court.adjudicate(CASE_ID)
+
+
+def test_bant_rejects_non_party_author_even_when_hash_matches(
+    court, direct_vm, direct_owner
+):
+    transcript = _bant(author="0x" + ("9" * 40))
+    package_body, _ = _file_with_bant(
+        direct_vm, court, direct_owner, bant_body=transcript
+    )
+    _mock_evidence(direct_vm, package_body)
+    _mock_bant(direct_vm, transcript)
+
+    with direct_vm.expect_revert("author is invalid"):
+        court.adjudicate(CASE_ID)
+
+
+def test_adjudicate_uses_valid_bant_transcript(court, direct_vm, direct_owner):
+    package_body, transcript = _file_with_bant(direct_vm, court, direct_owner)
+    _mock_evidence(direct_vm, package_body)
+    _mock_bant(direct_vm, transcript)
+    direct_vm.mock_llm(
+        r"(?s).*independent GenLayer validator adjudicating an appeal.*",
+        _verdict(),
+    )
+
+    court.adjudicate(CASE_ID)
+
+    saved = court.get_case(CASE_ID)
+    expected_digest = _sha((_sha(package_body) + "|" + _sha(transcript)).encode())
+    assert saved["status"] == "ruled"
+    assert saved["evidence_digest"] == expected_digest
 
 
 def test_adjudicate_upholds_strong_committed_evidence(

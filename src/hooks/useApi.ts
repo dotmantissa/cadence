@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import type { Payee, StreamDraft, User } from "@/db/schema";
+import type { AppealSourceType } from "@/lib/appeals";
 
 /**
  * Error thrown by the API client. Carries the HTTP status and, when the server
@@ -102,6 +103,100 @@ export function useApi() {
       }>("/api/resolve-addresses", {
         method: "POST",
         body: JSON.stringify({ addresses }),
+      }),
+
+    prepareCancellationAppeal: (input: {
+      streamId: string;
+      statement: string;
+      sources: { type: AppealSourceType; url: string; description: string }[];
+    }) =>
+      request<{
+        appeal: {
+          caseId: string;
+          evidenceUri: string;
+          evidenceHash: `0x${string}`;
+          status: string;
+          fileTxHash: string | null;
+          adjudicationTxHash: string | null;
+          relayTxHash: string | null;
+          verdict: Record<string, unknown> | null;
+          lastError: string | null;
+        };
+      }>("/api/appeals", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    getCancellationAppeal: (caseId: string) =>
+      request<{
+        appeal: {
+          caseId: string;
+          streamId: string;
+          status: string;
+          fileTxHash: string | null;
+          adjudicationTxHash: string | null;
+          relayTxHash: string | null;
+          verdict: Record<string, unknown> | null;
+          lastError: string | null;
+          updatedAt: string;
+        } | null;
+      }>(`/api/appeals/${encodeURIComponent(caseId)}`),
+    advanceCancellationAppeal: (caseId: string) =>
+      request<{
+        appeal: {
+          caseId: string;
+          streamId: string;
+          status: string;
+          fileTxHash: string | null;
+          adjudicationTxHash: string | null;
+          relayTxHash: string | null;
+          verdict: Record<string, unknown> | null;
+          lastError: string | null;
+          updatedAt: string;
+        } | null;
+      }>(`/api/appeals/${encodeURIComponent(caseId)}`, { method: "POST" }),
+    getBantRoom: (caseId: string) =>
+      request<{
+        room: {
+          caseId: string;
+          streamId: string;
+          opensAt: string;
+          closesAt: string;
+          status: "open" | "closed";
+        } | null;
+        messages: {
+          id: string;
+          authorAddress: string;
+          body: string;
+          evidenceUrl: string | null;
+          evidenceType: string | null;
+          evidenceDescription: string | null;
+          evidenceHash: string | null;
+          createdAt: string;
+        }[];
+      }>(`/api/bant/${encodeURIComponent(caseId)}`),
+    addBantMessage: (
+      caseId: string,
+      input: {
+        body: string;
+        evidenceUrl?: string;
+        evidenceType?: AppealSourceType;
+        evidenceDescription?: string;
+      }
+    ) =>
+      request<{
+        message: {
+          id: string;
+          authorAddress: string;
+          body: string;
+          evidenceUrl: string | null;
+          evidenceType: string | null;
+          evidenceDescription: string | null;
+          evidenceHash: string | null;
+          createdAt: string;
+        };
+      }>(`/api/bant/${encodeURIComponent(caseId)}`, {
+        method: "POST",
+        body: JSON.stringify(input),
       }),
 
     /**

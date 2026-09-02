@@ -11,6 +11,9 @@ import { WalletRestoring } from "@/components/WalletRestoring";
 import { StreamCollection } from "@/components/StreamCollection";
 import { RequestCollection } from "@/components/RequestCollection";
 import { RequestStreamModal } from "@/components/RequestStreamModal";
+import { AppealCancellationModal } from "@/components/AppealCancellationModal";
+import { BantRoom } from "@/components/BantRoom";
+import { AppealWorkflowRecovery } from "@/components/AppealWorkflowRecovery";
 import { ViewTabs } from "@/components/ViewTabs";
 import { FlowField } from "@/components/motion/FlowField";
 import { FaucetButton } from "@/components/FaucetButton";
@@ -20,6 +23,8 @@ import {
   useUsdcBalance,
   useWithdraw,
   useStreamsMeta,
+  useDeliverablesMeta,
+  useCancellationsMeta,
   usePayeeRequests,
   useRequestsMeta,
   ReqStatus,
@@ -40,9 +45,20 @@ export default function EmployeePage() {
 
   const [view, setView] = useState<"streams" | "requests">("streams");
   const [showRequest, setShowRequest] = useState(false);
+  const [appealStream, setAppealStream] = useState<{
+    stream: import("@/hooks/usePayroll").StreamMeta;
+    cancellation: import("@/hooks/usePayroll").CancellationMeta;
+  } | null>(null);
+  const [bantCaseId, setBantCaseId] = useState<string | null>(null);
 
   const ordered = useMemo(() => (ids ? [...ids].reverse() : []), [ids]);
   const { streams, isLoading: loadingMeta } = useStreamsMeta(ordered);
+  const { deliverables } = useDeliverablesMeta(ordered);
+  const { cancellations } = useCancellationsMeta(ordered);
+  const displayStreams = useMemo(
+    () => streams.map((stream) => ({ ...stream, deliverables: deliverables[stream.id.toString()] ?? "" })),
+    [streams, deliverables]
+  );
   const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
 
   // Cash out, then tell both sides once the tx confirms. The claimable amount is
@@ -86,13 +102,13 @@ export default function EmployeePage() {
     const nowSec = Math.floor(Date.now() / 1000);
     let active = 0;
     let scheduled = 0;
-    for (const s of streams) {
+    for (const s of displayStreams) {
       if (!s.active) continue;
       if (Number(s.startTime) > nowSec) scheduled++;
       else active++;
     }
     return { activeCount: active, scheduledCount: scheduled };
-  }, [streams]);
+  }, [displayStreams]);
 
   if (!connected) {
     return (
@@ -113,6 +129,7 @@ export default function EmployeePage() {
   return (
     <div className="min-h-screen bg-paper">
       <Navbar />
+      <AppealWorkflowRecovery cancellations={cancellations} onChanged={refetch} />
 
       <main className="mx-auto max-w-5xl px-5 pb-24 pt-28 sm:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -192,9 +209,19 @@ export default function EmployeePage() {
 
         {view === "streams" ? (
           <StreamCollection
-            streams={streams}
+            streams={displayStreams}
             perspective="employee"
             loading={loadingStreams}
+            cancellations={cancellations}
+            onAppeal={(id) => {
+              const stream = displayStreams.find((item) => item.id === id);
+              const cancellation = cancellations[id.toString()];
+              if (stream && cancellation) setAppealStream({ stream, cancellation });
+            }}
+            onOpenBant={(id) => {
+              const caseId = cancellations[id.toString()]?.caseId;
+              if (caseId && !/^0x0+$/.test(caseId)) setBantCaseId(caseId);
+            }}
             onWithdraw={handleWithdraw}
             emptyState={
               <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
@@ -235,6 +262,22 @@ export default function EmployeePage() {
             refetchReqs();
           }}
         />
+      )}
+
+      {appealStream !== null && (
+        <AppealCancellationModal
+          stream={appealStream.stream}
+          cancellation={appealStream.cancellation}
+          onClose={() => setAppealStream(null)}
+          onSubmitted={() => {
+            setAppealStream(null);
+            refetch();
+          }}
+        />
+      )}
+
+      {bantCaseId !== null && (
+        <BantRoom caseId={bantCaseId} onClose={() => setBantCaseId(null)} />
       )}
     </div>
   );

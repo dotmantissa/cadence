@@ -32,3 +32,7 @@ genlayer/artifacts/
 npm-debug.log*
 .vercel
 .env*
+
+# Local crash-recovery ledgers
+.cadence-recovery/
+.task-checklist.md

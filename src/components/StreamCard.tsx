@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass, XCircle, ExternalLink } from "lucide-react";
-import type { StreamMeta } from "@/hooks/usePayroll";
+import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass, XCircle, ExternalLink, MessageSquare } from "lucide-react";
+import type { CancellationMeta, StreamMeta } from "@/hooks/usePayroll";
 import { streamMath } from "@/lib/stream-math";
 import { StreamTicker } from "./StreamTicker";
 import { formatRunway, formatUsdc, rateToDaily, rateToMonthly, shortenAddress, streamExplorerUrl } from "@/lib/utils";
@@ -20,10 +20,24 @@ interface Props {
   onWithdraw?: () => void;
   onCancel?: () => void;
   onTopUp?: () => void;
+  cancellation?: CancellationMeta;
+  onAppeal?: () => void;
+  onOpenBant?: () => void;
   onOpenReceipt?: () => void;
 }
 
-export function StreamCard({ stream, perspective, counterparty, onWithdraw, onCancel, onTopUp, onOpenReceipt }: Props) {
+export function StreamCard({
+  stream,
+  perspective,
+  counterparty,
+  cancellation,
+  onWithdraw,
+  onCancel,
+  onTopUp,
+  onAppeal,
+  onOpenBant,
+  onOpenReceipt,
+}: Props) {
   const { id: streamId, employer, employee, ratePerSecond, startTime, active, invoiceRef } = stream;
 
   // The counterparty this card faces, and the friendly name to show for them:
@@ -89,6 +103,23 @@ export function StreamCard({ stream, perspective, counterparty, onWithdraw, onCa
   const lowRunway = streaming && runwaySeconds < 86400;
   const awaitingClaim = phase === "awaiting_claim";
   const claimed = phase === "claimed";
+  const appealWindow = cancellation?.status === 1;
+  const bantActive = cancellation?.status === 2;
+  const cancellationActive = appealWindow || bantActive;
+  const cancellationLabel =
+    cancellation?.status === 1
+      ? "appeal window"
+      : cancellation?.status === 2
+      ? "Bant in progress"
+      : cancellation?.status === 3
+      ? "appeal upheld"
+      : cancellation?.status === 4
+      ? "cancellation upheld"
+      : cancellation?.status === 5
+      ? "cancellation finalized"
+      : cancellation?.status === 6
+      ? "appeal timed out"
+      : null;
 
   // Only annualize when the commitment actually spans a month — a one-day stream
   // showing "$59.62/mo" invents a horizon that doesn't exist.
@@ -130,7 +161,17 @@ export function StreamCard({ stream, perspective, counterparty, onWithdraw, onCa
       <div className="relative flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            {notStarted ? (
+            {cancellationLabel ? (
+              <span className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
+                cancellationActive
+                  ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                  : "border-red-500/20 bg-red-500/[0.06] text-red-500/90"
+              )}>
+                <Hourglass size={11} />
+                {cancellationLabel}
+              </span>
+            ) : notStarted ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-panel-foreground/80">
                 <Clock size={11} className="text-volt-bright" />
                 scheduled
@@ -226,6 +267,20 @@ export function StreamCard({ stream, perspective, counterparty, onWithdraw, onCa
         )}
       </div>
 
+      {stream.deliverables && (
+        <div className={cn("relative mt-4 border-t pt-3 text-xs", active ? "border-white/10 text-panel-foreground/55" : "border-ink/10 text-ink/50")}>
+          <p className="uppercase tracking-widest opacity-60">deliverables</p>
+          <p className="mt-1 line-clamp-3 whitespace-pre-wrap leading-5">{stream.deliverables}</p>
+        </div>
+      )}
+
+      {cancellation?.reason && cancellationActive && (
+        <div className={cn("relative mt-4 border-t pt-3 text-xs", active ? "border-white/10 text-panel-foreground/55" : "border-ink/10 text-ink/50")}>
+          <p className="uppercase tracking-widest opacity-60">cancellation reason</p>
+          <p className="mt-1 line-clamp-2 leading-5">{cancellation.reason}</p>
+        </div>
+      )}
+
       <div
         className={cn(
           "relative mt-5 flex items-center justify-between border-t pt-4 text-sm",
@@ -279,6 +334,32 @@ export function StreamCard({ stream, perspective, counterparty, onWithdraw, onCa
             className="flex flex-1 items-center justify-center gap-2 rounded-full bg-volt py-3 text-sm font-medium text-white transition-colors hover:bg-volt-bright"
           >
             Cash out <ArrowUpRight size={16} />
+          </motion.button>
+        )}
+        {perspective === "employee" && appealWindow && (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAppeal?.();
+            }}
+            className="flex flex-1 items-center justify-center gap-2 rounded-full bg-volt py-3 text-sm font-medium text-white hover:bg-volt-bright"
+          >
+            Appeal cancellation
+          </motion.button>
+        )}
+        {bantActive && (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenBant?.();
+            }}
+            className="flex flex-1 items-center justify-center gap-2 rounded-full bg-amber-500 py-3 text-sm font-medium text-white hover:bg-amber-600"
+          >
+            <MessageSquare size={15} /> Open Bant room
           </motion.button>
         )}
         {perspective === "employer" && (

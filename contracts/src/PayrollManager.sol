@@ -28,6 +28,9 @@ contract PayrollManager is ReentrancyGuard {
     mapping(address => uint256[]) public employerStreams;
     // employee => their stream IDs
     mapping(address => uint256[]) public employeeStreams;
+    // streamId => payer-authored expectations used during Bant adjudication.
+    // Kept separate from Stream so the existing streams() ABI remains stable.
+    mapping(uint256 => string) public deliverables;
 
     uint256 public nextStreamId;
 
@@ -61,12 +64,15 @@ contract PayrollManager is ReentrancyGuard {
     }
 
     uint64 public constant APPEAL_WINDOW = 24 hours;
+    uint64 public constant BANT_WINDOW = 24 hours;
     uint64 public constant ADJUDICATION_TIMEOUT = 7 days;
 
     // streamId => latest cancellation request
     mapping(uint256 => Cancellation) public cancellations;
     // streamId => monotonically increasing cancellation request nonce
     mapping(uint256 => uint64) public cancellationNonces;
+    // streamId => immutable-on-Arc end of the two-party evidence exchange.
+    mapping(uint256 => uint64) public bantDeadlines;
 
     // ---- Stream requests + negotiation ----------------------------------
 
@@ -121,6 +127,7 @@ contract PayrollManager is ReentrancyGuard {
     );
     event Withdrawn(uint256 indexed streamId, address indexed employee, uint128 amount);
     event StreamToppedUp(uint256 indexed streamId, address indexed employer, uint128 amount);
+    event StreamDeliverablesSet(uint256 indexed streamId, string deliverables);
     event CancellationRequested(
         uint256 indexed streamId,
         uint64 indexed nonce,
@@ -193,7 +200,23 @@ contract PayrollManager is ReentrancyGuard {
     ) external nonReentrant returns (uint256 streamId) {
         _validateTerms(employee, ratePerSecond, deposit);
         usdc.transferFrom(msg.sender, address(this), deposit);
-        streamId = _openStream(msg.sender, employee, ratePerSecond, deposit, invoiceRef, startAt);
+        streamId = _openStream(msg.sender, employee, ratePerSecond, deposit, invoiceRef, startAt, "");
+    }
+
+    /// @notice Employer creates a stream with explicit deliverables. The text is
+    /// immutable and is supplied to GenLayer alongside the Bant record.
+    function createStreamWithDeliverables(
+        address employee,
+        uint128 ratePerSecond,
+        uint128 deposit,
+        string calldata invoiceRef,
+        string calldata streamDeliverables,
+        uint64 startAt
+    ) external nonReentrant returns (uint256 streamId) {
+        _validateTerms(employee, ratePerSecond, deposit);
+        _validateDeliverables(streamDeliverables);
+        usdc.transferFrom(msg.sender, address(this), deposit);
+        streamId = _openStream(msg.sender, employee, ratePerSecond, deposit, invoiceRef, startAt, streamDeliverables);
     }
 
     /// @notice Open many payroll streams in a single transaction. The caller is
@@ -239,7 +262,55 @@ contract PayrollManager is ReentrancyGuard {
         streamIds = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
             streamIds[i] =
-                _openStream(msg.sender, employees[i], ratesPerSecond[i], deposits[i], invoiceRefs[i], startAt);
+                _openStream(msg.sender, employees[i], ratesPerSecond[i], deposits[i], invoiceRefs[i], startAt, "");
+        }
+    }
+
+    /// @notice Batch equivalent of `createStreamWithDeliverables`.
+    function createStreamsWithDeliverables(
+        address[] calldata employees,
+        uint128[] calldata ratesPerSecond,
+        uint128[] calldata deposits,
+        string[] calldata invoiceRefs,
+        string[] calldata streamDeliverables,
+        uint64 startAt
+    ) external nonReentrant returns (uint256[] memory streamIds) {
+        uint256 n = employees.length;
+        require(n > 0, "no streams");
+        require(
+            ratesPerSecond.length == n && deposits.length == n && invoiceRefs.length == n
+                && streamDeliverables.length == n,
+            "length mismatch"
+        );
+
+        uint256 total;
+        for (uint256 i = 0; i < n; i++) {
+            _validateTerms(employees[i], ratesPerSecond[i], deposits[i]);
+            _validateDeliverables(streamDeliverables[i]);
+            total += deposits[i];
+        }
+
+        usdc.transferFrom(msg.sender, address(this), total);
+        streamIds = _openStreamsWithDeliverables(
+            msg.sender, employees, ratesPerSecond, deposits, invoiceRefs, streamDeliverables, startAt
+        );
+    }
+
+    function _openStreamsWithDeliverables(
+        address employer,
+        address[] calldata employees,
+        uint128[] calldata ratesPerSecond,
+        uint128[] calldata deposits,
+        string[] calldata invoiceRefs,
+        string[] calldata streamDeliverables,
+        uint64 startAt
+    ) internal returns (uint256[] memory streamIds) {
+        uint256 n = employees.length;
+        streamIds = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            streamIds[i] = _openStream(
+                employer, employees[i], ratesPerSecond[i], deposits[i], invoiceRefs[i], startAt, streamDeliverables[i]
+            );
         }
     }
 
@@ -251,6 +322,10 @@ contract PayrollManager is ReentrancyGuard {
         require(deposit >= ratePerSecond, "deposit < 1 second of pay");
     }
 
+    function _validateDeliverables(string calldata streamDeliverables) internal pure {
+        require(bytes(streamDeliverables).length <= 5000, "deliverables too long");
+    }
+
     /// @dev Records a stream assuming `deposit` USDC is already held by this
     ///      contract. Callers must move funds in first (direct create / accept)
     ///      or have escrowed them earlier (accepting a counter-offer).
@@ -260,7 +335,8 @@ contract PayrollManager is ReentrancyGuard {
         uint128 ratePerSecond,
         uint128 deposit,
         string memory invoiceRef,
-        uint64 startAt
+        uint64 startAt,
+        string memory streamDeliverables
     ) internal returns (uint256 streamId) {
         streamId = nextStreamId++;
         uint64 now_ = uint64(block.timestamp);
@@ -280,11 +356,15 @@ contract PayrollManager is ReentrancyGuard {
             active: true,
             invoiceRef: invoiceRef
         });
+        deliverables[streamId] = streamDeliverables;
 
         employerStreams[employer].push(streamId);
         employeeStreams[employee].push(streamId);
 
         emit StreamCreated(streamId, employer, employee, ratePerSecond, deposit, invoiceRef, start);
+        if (bytes(streamDeliverables).length > 0) {
+            emit StreamDeliverablesSet(streamId, streamDeliverables);
+        }
     }
 
     /// @notice Employee withdraws all accrued USDC from a stream.
@@ -436,6 +516,7 @@ contract PayrollManager is ReentrancyGuard {
         c.evidenceHash = evidenceHash;
         c.evidenceUri = evidenceUri;
         c.adjudicationDeadline = uint64(block.timestamp) + ADJUDICATION_TIMEOUT;
+        bantDeadlines[streamId] = uint64(block.timestamp) + BANT_WINDOW;
 
         emit CancellationAppealed(
             streamId,
@@ -459,6 +540,7 @@ contract PayrollManager is ReentrancyGuard {
         Cancellation storage c = cancellations[streamId];
         require(c.status == CancellationStatus.Appealed, "not adjudicating");
         require(block.timestamp <= c.adjudicationDeadline, "adjudication timed out");
+        require(block.timestamp >= bantDeadlines[streamId], "bant period active");
 
         uint128 refund;
         c.verdictHash = verdictHash;
@@ -506,6 +588,10 @@ contract PayrollManager is ReentrancyGuard {
     function cancellationCaseId(uint256 streamId) public view returns (bytes32) {
         Cancellation storage c = cancellations[streamId];
         return keccak256(abi.encode(block.chainid, address(this), streamId, c.nonce));
+    }
+
+    function bantDeadline(uint256 streamId) external view returns (uint64) {
+        return bantDeadlines[streamId];
     }
 
     /// @notice How much USDC has accrued since last claim (capped at deposit).
@@ -620,7 +706,7 @@ contract PayrollManager is ReentrancyGuard {
 
         r.status = ReqStatus.Accepted;
         usdc.transferFrom(msg.sender, address(this), r.deposit);
-        streamId = _openStream(r.payer, r.payee, r.ratePerSecond, r.deposit, r.invoiceRef, r.startAt);
+        streamId = _openStream(r.payer, r.payee, r.ratePerSecond, r.deposit, r.invoiceRef, r.startAt, "");
         r.streamId = streamId;
 
         emit RequestAccepted(requestId, streamId);
@@ -659,7 +745,7 @@ contract PayrollManager is ReentrancyGuard {
         require(block.timestamp <= r.counterDeadline, "counter expired");
 
         r.status = ReqStatus.Accepted;
-        streamId = _openStream(r.payer, r.payee, r.ratePerSecond, r.deposit, r.invoiceRef, r.startAt);
+        streamId = _openStream(r.payer, r.payee, r.ratePerSecond, r.deposit, r.invoiceRef, r.startAt, "");
         r.streamId = streamId;
 
         emit RequestAccepted(requestId, streamId);

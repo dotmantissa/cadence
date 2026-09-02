@@ -1,8 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { useConfig } from "wagmi";
-import { waitForTransactionReceipt } from "@wagmi/core";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Plus, Wallet, Waves, Eye, EyeOff } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
@@ -11,6 +9,9 @@ import { WalletRestoring } from "@/components/WalletRestoring";
 import { StreamCollection } from "@/components/StreamCollection";
 import { RequestCollection } from "@/components/RequestCollection";
 import { CreateStreamModal } from "@/components/CreateStreamModal";
+import { CancelStreamModal } from "@/components/CancelStreamModal";
+import { BantRoom } from "@/components/BantRoom";
+import { AppealWorkflowRecovery } from "@/components/AppealWorkflowRecovery";
 import { TopUpModal } from "@/components/TopUpModal";
 import { ViewTabs } from "@/components/ViewTabs";
 import { FlowField } from "@/components/motion/FlowField";
@@ -19,100 +20,39 @@ import { useActiveAddress } from "@/hooks/useActiveAddress";
 import {
   useEmployerStreams,
   useUsdcBalance,
-  useCancelStream,
   useStreamsMeta,
+  useDeliverablesMeta,
+  useCancellationsMeta,
   usePayerRequests,
   useRequestsMeta,
   ReqStatus,
 } from "@/hooks/usePayroll";
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
-import { useNotify } from "@/hooks/useNotify";
-import { streamMath } from "@/lib/stream-math";
 import { formatUsdc } from "@/lib/utils";
 import type { StreamMeta } from "@/hooks/usePayroll";
 
 export default function EmployerPage() {
   const { address, connected, restoring } = useActiveAddress();
-  const config = useConfig();
   const { data: ids, isLoading: loadingIds, refetch } = useEmployerStreams(address);
   const { data: balance } = useUsdcBalance(address);
-  const { cancel } = useCancelStream();
-  const { notify } = useNotify();
   const [hideBalance, toggleBalance] = useBalancePrivacy();
-
-  // Stream IDs the user just cancelled, held until the refetch confirms the
-  // on-chain flip. While an ID sits here we render its card as already settled
-  // so the ticker stops the moment the tx is submitted, instead of animating on
-  // until the next 5s poll (or a manual refresh) happens to catch the change.
-  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
 
   const [view, setView] = useState<"streams" | "requests">("streams");
   const [showCreate, setShowCreate] = useState(false);
   const [topUpStream, setTopUpStream] = useState<StreamMeta | null>(null);
+  const [cancelStream, setCancelStream] = useState<StreamMeta | null>(null);
+  const [bantCaseId, setBantCaseId] = useState<string | null>(null);
 
   // Newest-first, decoded once for both the counts and the collection.
   const ordered = useMemo(() => (ids ? [...ids].reverse() : []), [ids]);
   const { streams, isLoading: loadingMeta } = useStreamsMeta(ordered);
-  const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
-
-  // Overlay the optimistic cancel state: a just-cancelled stream is shown as
-  // settled (inactive, escrow zeroed) so streamMath reads it as `cancelled` and
-  // the card stops ticking immediately. Zeroing `deposit` while `withdrawn`
-  // stays below `totalDeposited` is exactly the on-chain cancel signature, so
-  // the optimistic card matches what the refetch will confirm.
+  const { deliverables } = useDeliverablesMeta(ordered);
+  const { cancellations } = useCancellationsMeta(ordered);
   const displayStreams = useMemo(
-    () =>
-      cancellingIds.size === 0
-        ? streams
-        : streams.map((s) =>
-            cancellingIds.has(s.id.toString()) ? { ...s, active: false, deposit: 0n } : s
-          ),
-    [streams, cancellingIds]
+    () => streams.map((stream) => ({ ...stream, deliverables: deliverables[stream.id.toString()] ?? "" })),
+    [streams, deliverables]
   );
-
-  const handleCancel = useCallback(
-    async (id: bigint) => {
-      const key = id.toString();
-      // Snapshot the live figures before the cancel zeroes the escrow: what has
-      // already streamed to the payee (they keep it) and what refunds to us.
-      const stream: StreamMeta | undefined = streams.find((s) => s.id === id);
-      let streamed: string | null = null;
-      let refund: string | null = null;
-      if (stream) {
-        const m = streamMath(stream);
-        streamed = m.streamedSoFar.toString();
-        refund = m.remaining.toString();
-      }
-      try {
-        // Awaits the wallet confirmation; only freeze once the tx is actually
-        // submitted, so a rejected cancel leaves the live card untouched.
-        const hash = await cancel(id);
-        setCancellingIds((prev) => new Set(prev).add(key));
-        await waitForTransactionReceipt(config, { hash });
-        await refetch();
-        // Tell both sides once the refund has settled on-chain.
-        if (stream) {
-          notify("stream_cancelled", {
-            counterpartyAddress: stream.employee,
-            streamed,
-            refund,
-            reference: stream.invoiceRef || null,
-          });
-        }
-      } catch {
-        // Wallet rejected or the tx failed — nothing to freeze.
-      } finally {
-        // Fresh data (post-refetch) already carries the cancelled state, so it's
-        // safe to drop the optimistic override without the card resuming ticking.
-        setCancellingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(key);
-          return next;
-        });
-      }
-    },
-    [streams, cancel, config, refetch, notify]
-  );
+  const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
 
   // Requests addressed to this wallet (it is the payer), newest-first.
   const { data: reqIds, isLoading: loadingReqIds, refetch: refetchReqs } = usePayerRequests(address);
@@ -156,6 +96,7 @@ export default function EmployerPage() {
   return (
     <div className="min-h-screen bg-paper">
       <Navbar />
+      <AppealWorkflowRecovery cancellations={cancellations} onChanged={refetch} />
 
       <main className="mx-auto max-w-5xl px-5 pb-24 pt-28 sm:px-8">
         {/* Header */}
@@ -238,8 +179,13 @@ export default function EmployerPage() {
             streams={displayStreams}
             perspective="employer"
             loading={loadingStreams}
-            onCancel={handleCancel}
-            onTopUp={(id) => setTopUpStream(streams.find((s) => s.id === id) ?? null)}
+            cancellations={cancellations}
+            onCancel={(id) => setCancelStream(displayStreams.find((s) => s.id === id) ?? null)}
+            onTopUp={(id) => setTopUpStream(displayStreams.find((s) => s.id === id) ?? null)}
+            onOpenBant={(id) => {
+              const caseId = cancellations[id.toString()]?.caseId;
+              if (caseId && !/^0x0+$/.test(caseId)) setBantCaseId(caseId);
+            }}
             emptyState={
               <div className="mt-8 rounded-none border border-dashed border-ink/15 bg-paper-warm p-14 text-center">
                 <p className="text-ink/60">No streams yet. The team is waiting.</p>
@@ -288,6 +234,21 @@ export default function EmployerPage() {
             refetch();
           }}
         />
+      )}
+
+      {cancelStream !== null && (
+        <CancelStreamModal
+          stream={cancelStream}
+          onClose={() => setCancelStream(null)}
+          onSubmitted={() => {
+            setCancelStream(null);
+            refetch();
+          }}
+        />
+      )}
+
+      {bantCaseId !== null && (
+        <BantRoom caseId={bantCaseId} onClose={() => setBantCaseId(null)} />
       )}
     </div>
   );

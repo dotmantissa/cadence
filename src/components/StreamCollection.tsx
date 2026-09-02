@@ -6,7 +6,7 @@ import { StreamCard } from "./StreamCard";
 import { StreamReceiptModal } from "./StreamReceiptModal";
 import { StatementFilterModal } from "./StatementFilterModal";
 import { Pagination, usePagination } from "./Pagination";
-import { type StreamMeta } from "@/hooks/usePayroll";
+import { type CancellationMeta, type StreamMeta } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import { streamMath } from "@/lib/stream-math";
@@ -26,6 +26,9 @@ interface Props {
   onWithdraw?: (id: bigint) => void;
   onCancel?: (id: bigint) => void;
   onTopUp?: (id: bigint) => void;
+  cancellations?: Record<string, CancellationMeta>;
+  onAppeal?: (id: bigint) => void;
+  onOpenBant?: (id: bigint) => void;
   /** Rendered when this wallet has no streams at all. */
   emptyState: React.ReactNode;
 }
@@ -74,6 +77,9 @@ export function StreamCollection({
   onWithdraw,
   onCancel,
   onTopUp,
+  cancellations = {},
+  onAppeal,
+  onOpenBant,
   emptyState,
 }: Props) {
   const { api, authenticated } = useApi();
@@ -330,6 +336,9 @@ export function StreamCollection({
               onWithdraw={onWithdraw ? () => onWithdraw(s.id) : undefined}
               onCancel={onCancel ? () => onCancel(s.id) : undefined}
               onTopUp={onTopUp ? () => onTopUp(s.id) : undefined}
+              cancellation={cancellations[s.id.toString()]}
+              onAppeal={onAppeal ? () => onAppeal(s.id) : undefined}
+              onOpenBant={onOpenBant ? () => onOpenBant(s.id) : undefined}
             />
           ))}
         </div>

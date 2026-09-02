@@ -43,7 +43,9 @@ const ARC_FEE = {
 const GAS_LIMITS = {
   withdraw: 200_000n,
   topUp: 200_000n,
-  cancelStream: 200_000n,
+  requestCancellation: 300_000n,
+  appealCancellation: 250_000n,
+  finalizeCancellation: 200_000n,
   createStream: 600_000n,
   approve: 120_000n,
   requestStream: 400_000n,
@@ -83,6 +85,23 @@ export interface StreamMeta {
   withdrawn: bigint;
   active: boolean;
   invoiceRef: string;
+  deliverables: string;
+}
+
+export interface CancellationMeta {
+  caseId: `0x${string}`;
+  nonce: bigint;
+  requestedAt: bigint;
+  appealDeadline: bigint;
+  adjudicationDeadline: bigint;
+  escrowedRefund: bigint;
+  /** PayrollManager.CancellationStatus numeric value. */
+  status: number;
+  evidenceHash: `0x${string}`;
+  verdictHash: `0x${string}`;
+  reason: string;
+  evidenceUri: string;
+  bantDeadline: bigint;
 }
 
 /**
@@ -156,6 +175,7 @@ export function useStreamsMeta(ids: readonly bigint[] | undefined) {
             withdrawn,
             active,
             invoiceRef,
+            deliverables: "",
           };
           cache.current.set(key, meta);
           return meta;
@@ -168,6 +188,145 @@ export function useStreamsMeta(ids: readonly bigint[] | undefined) {
   }, [query.data, idKey]);
 
   return { streams, isLoading: query.isLoading, refetch: query.refetch };
+}
+
+/** Read the immutable deliverables text for a stream list in one multicall. */
+export function useDeliverablesMeta(ids: readonly bigint[] | undefined) {
+  const idKey = (ids ?? []).map((i) => i.toString()).join(",");
+  const contracts = useMemo(
+    () =>
+      (ids ?? []).map((id) => ({
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "deliverables" as const,
+        args: [id] as const,
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idKey]
+  );
+  const query = useReadContracts({
+    contracts,
+    query: {
+      enabled: !!ids && ids.length > 0,
+      refetchInterval: 15_000,
+      placeholderData: keepPreviousData,
+    },
+  });
+  const cache = useRef(new Map<string, string>());
+  const deliverables = useMemo<Record<string, string>>(() => {
+    const list = ids ?? [];
+    const data = query.data ?? [];
+    return list.reduce<Record<string, string>>((out, id, i) => {
+      const result = data[i];
+      if (result?.status === "success" && typeof result.result === "string") {
+        cache.current.set(id.toString(), result.result);
+      }
+      out[id.toString()] = cache.current.get(id.toString()) ?? "";
+      return out;
+    }, {});
+  }, [query.data, idKey]);
+  return { deliverables, isLoading: query.isLoading, refetch: query.refetch };
+}
+
+/** Read the latest cancellation record alongside a wallet's stream list. */
+export function useCancellationsMeta(ids: readonly bigint[] | undefined) {
+  const idKey = (ids ?? []).map((i) => i.toString()).join(",");
+  const contracts = useMemo(
+    () =>
+      (ids ?? []).flatMap((id) => [
+        {
+          address: PAYROLL_ADDRESS,
+          abi: PAYROLL_ABI,
+          functionName: "cancellations" as const,
+          args: [id] as const,
+        },
+        {
+          address: PAYROLL_ADDRESS,
+          abi: PAYROLL_ABI,
+          functionName: "cancellationCaseId" as const,
+          args: [id] as const,
+        },
+        {
+          address: PAYROLL_ADDRESS,
+          abi: PAYROLL_ABI,
+          functionName: "bantDeadline" as const,
+          args: [id] as const,
+        },
+      ]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idKey]
+  );
+  const query = useReadContracts({
+    contracts,
+    query: {
+      enabled: !!ids && ids.length > 0,
+      refetchInterval: 5000,
+      placeholderData: keepPreviousData,
+    },
+  });
+  const cache = useRef(new Map<string, CancellationMeta>());
+  const cancellations = useMemo(() => {
+    const list = ids ?? [];
+    const data = query.data ?? [];
+    return list.reduce<Record<string, CancellationMeta>>((out, id, i) => {
+      const result = data[i * 3];
+      const caseIdResult = data[i * 3 + 1];
+      const bantDeadlineResult = data[i * 3 + 2];
+      if (result?.status === "success" && result.result) {
+        const [
+          nonce,
+          requestedAt,
+          appealDeadline,
+          adjudicationDeadline,
+          escrowedRefund,
+          status,
+          evidenceHash,
+          verdictHash,
+          reason,
+          evidenceUri,
+        ] = result.result as unknown as [
+          bigint,
+          bigint,
+          bigint,
+          bigint,
+          bigint,
+          number,
+          `0x${string}`,
+          `0x${string}`,
+          string,
+          string
+        ];
+        const caseId =
+          caseIdResult?.status === "success" && typeof caseIdResult.result === "string"
+            ? caseIdResult.result
+            : undefined;
+        const bantDeadline =
+          bantDeadlineResult?.status === "success" && typeof bantDeadlineResult.result === "bigint"
+            ? bantDeadlineResult.result
+            : 0n;
+        const meta: CancellationMeta = {
+          caseId: (caseId ?? `0x${"0".repeat(64)}`) as `0x${string}`,
+          nonce,
+          requestedAt,
+          appealDeadline,
+          adjudicationDeadline,
+          escrowedRefund,
+          status,
+          evidenceHash,
+          verdictHash,
+          reason,
+          evidenceUri,
+          bantDeadline,
+        };
+        cache.current.set(id.toString(), meta);
+      }
+      const cached = cache.current.get(id.toString());
+      if (cached) out[id.toString()] = cached;
+      return out;
+    }, {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.data, idKey]);
+  return { cancellations, isLoading: query.isLoading, refetch: query.refetch };
 }
 
 export function useEmployerStreams(employer: `0x${string}` | undefined) {
@@ -254,8 +413,15 @@ export function useCancelStream() {
     // Async so the caller can freeze the card the instant the tx is submitted
     // and refetch once it confirms, instead of the stream ticking on until the
     // next background poll happens to catch the state change.
-    cancel: async (streamId: bigint) => {
-      return writeContractAsync({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "cancelStream", args: [streamId], gas: GAS_LIMITS.cancelStream, ...ARC_FEE });
+    cancel: async (streamId: bigint, reason: string) => {
+      return writeContractAsync({
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "requestCancellation",
+        args: [streamId, reason],
+        gas: GAS_LIMITS.requestCancellation,
+        ...ARC_FEE,
+      });
     },
     isPending,
     isConfirming,
@@ -263,6 +429,55 @@ export function useCancelStream() {
     error,
     hash,
   };
+}
+
+export function useAppealCancellation() {
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  return {
+    appeal: async (
+      streamId: bigint,
+      evidenceUri: string,
+      evidenceHash: `0x${string}`
+    ) =>
+      writeContractAsync({
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "appealCancellation",
+        args: [streamId, evidenceUri, evidenceHash],
+        gas: GAS_LIMITS.appealCancellation,
+        ...ARC_FEE,
+      }),
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+    hash,
+  };
+}
+
+export function useFinalizeCancellation() {
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const finalizeUnappealed = (streamId: bigint) =>
+    writeContractAsync({
+      address: PAYROLL_ADDRESS,
+      abi: PAYROLL_ABI,
+      functionName: "finalizeUnappealedCancellation",
+      args: [streamId],
+      gas: GAS_LIMITS.finalizeCancellation,
+      ...ARC_FEE,
+    });
+  const finalizeTimedOut = (streamId: bigint) =>
+    writeContractAsync({
+      address: PAYROLL_ADDRESS,
+      abi: PAYROLL_ABI,
+      functionName: "finalizeTimedOutAppeal",
+      args: [streamId],
+      gas: GAS_LIMITS.finalizeCancellation,
+      ...ARC_FEE,
+    });
+  return { finalizeUnappealed, finalizeTimedOut, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function useCreateStream() {
@@ -275,14 +490,24 @@ export function useCreateStream() {
       ratePerSecond: bigint,
       deposit: bigint,
       invoiceRef: string,
-      startAt: bigint = 0n
+      startAt: bigint = 0n,
+      deliverables = ""
     ) => {
-      const args = [employee, ratePerSecond, deposit, invoiceRef, startAt] as const;
+      if (deliverables.trim()) {
+        return writeContractAsync({
+          address: PAYROLL_ADDRESS,
+          abi: PAYROLL_ABI,
+          functionName: "createStreamWithDeliverables",
+          args: [employee, ratePerSecond, deposit, invoiceRef, deliverables.trim(), startAt],
+          gas: GAS_LIMITS.createStream,
+          ...ARC_FEE,
+        });
+      }
       return writeContractAsync({
         address: PAYROLL_ADDRESS,
         abi: PAYROLL_ABI,
         functionName: "createStream",
-        args,
+        args: [employee, ratePerSecond, deposit, invoiceRef, startAt],
         gas: GAS_LIMITS.createStream,
         ...ARC_FEE,
       });
@@ -326,6 +551,7 @@ export interface BatchStreamParams {
   deposit: bigint;
   invoiceRef: string;
   startAt: bigint;
+  deliverables?: string;
 }
 
 export type BatchStreamProgress = "idle" | "pending" | "success" | "error";
@@ -374,13 +600,18 @@ export function useBatchCreateStreams() {
       const rates = streams.map((s) => s.ratePerSecond);
       const deposits = streams.map((s) => s.deposit);
       const refs = streams.map((s) => s.invoiceRef);
+      const deliverables = streams.map((s) => s.deliverables ?? "");
       const startAt = streams[0].startAt;
 
       const hash = await writeContractAsync({
         address: PAYROLL_ADDRESS,
         abi: PAYROLL_ABI,
-        functionName: "createStreams",
-        args: [employees, rates, deposits, refs, startAt],
+        functionName: deliverables.some((value) => value.trim())
+          ? "createStreamsWithDeliverables"
+          : "createStreams",
+        args: deliverables.some((value) => value.trim())
+          ? [employees, rates, deposits, refs, deliverables, startAt]
+          : [employees, rates, deposits, refs, startAt],
         gas: batchCreateGasLimit(streams.length),
         ...ARC_FEE,
       });

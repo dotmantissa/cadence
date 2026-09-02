@@ -102,7 +102,109 @@ export const streamDrafts = pgTable(
   })
 );
 
+export type AppealEvidenceSource = {
+  type:
+    | "agreement"
+    | "work_product"
+    | "invoice"
+    | "communication"
+    | "acceptance_record"
+    | "payment_record"
+    | "identity_record"
+    | "other";
+  url: string;
+  sha256: string;
+  description: string;
+};
+
+/**
+ * Off-chain orchestration for a cross-chain appeal. Arc remains authoritative
+ * for the escrow and GenLayer remains authoritative for the verdict; this row
+ * stores the committed evidence package and transaction progress so repeated
+ * dashboard polls can advance the workflow idempotently.
+ */
+export const cancellationAppeals = pgTable(
+  "cancellation_appeals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    caseId: text("case_id").notNull().unique(),
+    streamId: text("stream_id").notNull(),
+    cancellationNonce: text("cancellation_nonce").notNull(),
+    payerAddress: text("payer_address").notNull(),
+    payeeAddress: text("payee_address").notNull(),
+    evidenceUri: text("evidence_uri").notNull(),
+    evidenceHash: text("evidence_hash").notNull(),
+    evidencePackage: text("evidence_package").notNull(),
+    sources: jsonb("sources").$type<AppealEvidenceSource[]>().notNull(),
+    status: text("status").notNull().default("prepared"),
+    fileTxHash: text("file_tx_hash"),
+    adjudicationTxHash: text("adjudication_tx_hash"),
+    relayTxHash: text("relay_tx_hash"),
+    bantUri: text("bant_uri"),
+    bantHash: text("bant_hash"),
+    verdict: jsonb("verdict").$type<Record<string, unknown>>(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    ownerIdx: index("cancellation_appeals_owner_idx").on(t.ownerId),
+    streamIdx: index("cancellation_appeals_stream_idx").on(t.streamId),
+  })
+);
+
+export const bantRooms = pgTable(
+  "bant_rooms",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    caseId: text("case_id").notNull().unique(),
+    streamId: text("stream_id").notNull(),
+    payerAddress: text("payer_address").notNull(),
+    payeeAddress: text("payee_address").notNull(),
+    opensAt: timestamp("opens_at", { withTimezone: true }).notNull(),
+    closesAt: timestamp("closes_at", { withTimezone: true }).notNull(),
+    status: text("status").notNull().default("open"), // open | closed
+    snapshot: text("snapshot"),
+    snapshotHash: text("snapshot_hash"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    streamIdx: index("bant_rooms_stream_idx").on(t.streamId),
+  })
+);
+
+export const bantMessages = pgTable(
+  "bant_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => bantRooms.id, { onDelete: "cascade" }),
+    authorUserId: uuid("author_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    authorAddress: text("author_address").notNull(),
+    body: text("body").notNull(),
+    evidenceUrl: text("evidence_url"),
+    evidenceType: text("evidence_type"),
+    evidenceDescription: text("evidence_description"),
+    evidenceHash: text("evidence_hash"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    roomIdx: index("bant_messages_room_idx").on(t.roomId),
+    createdIdx: index("bant_messages_created_idx").on(t.createdAt),
+  })
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Payee = typeof payees.$inferSelect;
 export type StreamDraft = typeof streamDrafts.$inferSelect;
+export type CancellationAppeal = typeof cancellationAppeals.$inferSelect;
+export type BantRoom = typeof bantRooms.$inferSelect;
+export type BantMessage = typeof bantMessages.$inferSelect;

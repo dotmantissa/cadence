@@ -97,6 +97,20 @@ contract PayrollManagerTest is Test {
         assertTrue(active);
     }
 
+    function test_CreateStreamWithDeliverables_StoresExpectations() public {
+        vm.prank(employer);
+        uint256 id = payroll.createStreamWithDeliverables(
+            employee,
+            RATE,
+            DEPOSIT,
+            "INV-DELIVERABLES",
+            "Ship the signed integration, include tests, and provide deployment notes.",
+            0
+        );
+
+        assertEq(payroll.deliverables(id), "Ship the signed integration, include tests, and provide deployment notes.");
+    }
+
     function test_AccruesOverTime() public {
         vm.prank(employer);
         uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-001", 0);
@@ -363,6 +377,7 @@ contract PayrollManagerTest is Test {
         _appeal(id);
         assertEq(uint8(_cancellationStatus(id)), uint8(PayrollManager.CancellationStatus.Appealed));
 
+        vm.warp(block.timestamp + 24 hours);
         vm.prank(adjudicator);
         payroll.resolveCancellation(id, true, keccak256("first verdict"));
 
@@ -436,6 +451,7 @@ contract PayrollManagerTest is Test {
         uint256 payerBefore = usdc.balanceOf(employer);
         uint128 held = _cancellationEscrow(id);
 
+        vm.warp(block.timestamp + 24 hours);
         vm.prank(adjudicator);
         payroll.resolveCancellation(id, false, keccak256("appeal rejected verdict"));
 
@@ -449,6 +465,7 @@ contract PayrollManagerTest is Test {
         uint256 id = _createAndRequestCancellation();
         _appeal(id);
 
+        vm.warp(block.timestamp + 24 hours);
         vm.prank(adjudicator);
         payroll.resolveCancellation(id, true, keccak256("verdict"));
 
@@ -481,6 +498,7 @@ contract PayrollManagerTest is Test {
         uint256 id = _createAndRequestCancellation();
         bytes32 firstCase = payroll.cancellationCaseId(id);
         _appeal(id);
+        vm.warp(block.timestamp + 24 hours);
         vm.prank(adjudicator);
         payroll.resolveCancellation(id, true, keccak256("first verdict"));
 
@@ -1007,6 +1025,42 @@ contract PayrollManagerTest is Test {
 
         // Streams are indexed under the employer.
         assertEq(payroll.getEmployerStreams(employer).length, 3);
+    }
+
+    function test_CreateStreamsWithDeliverables_StoresEachExpectation() public {
+        address[] memory emps = new address[](2);
+        emps[0] = employee;
+        emps[1] = address(0x4);
+
+        uint128[] memory rates = new uint128[](2);
+        rates[0] = RATE;
+        rates[1] = 2 * RATE;
+
+        uint128[] memory deps = new uint128[](2);
+        deps[0] = 1000e6;
+        deps[1] = 2000e6;
+
+        string[] memory refs = new string[](2);
+        refs[0] = "INV-A";
+        refs[1] = "INV-B";
+
+        string[] memory expectations = new string[](2);
+        expectations[0] = "Deliver the signed integration.";
+        expectations[1] = "Deliver the tested migration and runbook.";
+
+        vm.prank(employer);
+        uint256[] memory ids = payroll.createStreamsWithDeliverables(emps, rates, deps, refs, expectations, 0);
+
+        assertEq(payroll.deliverables(ids[0]), expectations[0]);
+        assertEq(payroll.deliverables(ids[1]), expectations[1]);
+    }
+
+    function test_CreateStreamWithDeliverables_RejectsOversizedText() public {
+        bytes memory oversized = new bytes(5001);
+
+        vm.prank(employer);
+        vm.expectRevert("deliverables too long");
+        payroll.createStreamWithDeliverables(employee, RATE, DEPOSIT, "INV", string(oversized), 0);
     }
 
     function test_CreateStreams_RevertsAtomicallyOnBadRow() public {

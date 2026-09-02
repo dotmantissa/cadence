@@ -8,10 +8,11 @@ import { StatementFilterModal } from "./StatementFilterModal";
 import { Pagination, usePagination } from "./Pagination";
 import { payrollRefKey, type CancellationMeta, type PayrollRef, type StreamMeta } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
+import { isOpenCancellationStatus } from "@/lib/appeals";
 import { cn } from "@/lib/utils";
 import { streamMath } from "@/lib/stream-math";
 
-type Filter = "ongoing" | "scheduled" | "awaiting_claim" | "complete" | "all";
+type Filter = "ongoing" | "scheduled" | "appeals" | "awaiting_claim" | "complete" | "all";
 type Identity = { username: string | null; displayName: string | null };
 
 /** Cards per page — keeps every stream view to a compact, scannable 4-up grid. */
@@ -36,6 +37,7 @@ interface Props {
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "ongoing", label: "Ongoing" },
   { key: "scheduled", label: "Scheduled" },
+  { key: "appeals", label: "Appeals" },
   { key: "awaiting_claim", label: "Awaiting claim" },
   { key: "complete", label: "Complete" },
   { key: "all", label: "All" },
@@ -45,9 +47,16 @@ const FILTERS: { key: Filter; label: string }[] = [
  * Bucket a stream into exactly one filter tab from its lifecycle phase.
  * Awaiting-claim streams are active on-chain, but time-exhausted and waiting
  * for the payee's final withdrawal, so they get their own actionable tab.
+ * Cancellation-pending streams are inactive on-chain while their escrow is
+ * held, so their open appeal/Bant state must take precedence over "complete".
  * "complete" is any settled/ended stream.
  */
-function bucketOf(s: StreamMeta, nowSec: number): Exclude<Filter, "all"> {
+function bucketOf(
+  s: StreamMeta,
+  nowSec: number,
+  cancellation?: CancellationMeta
+): Exclude<Filter, "all"> {
+  if (cancellation && isOpenCancellationStatus(cancellation.status)) return "appeals";
   const { phase } = streamMath(s, nowSec);
   if (phase === "scheduled") return "scheduled";
   if (phase === "awaiting_claim") return "awaiting_claim";
@@ -127,17 +136,19 @@ export function StreamCollection({
     const nowSec = Math.floor(Date.now() / 1000);
     let ongoing = 0;
     let scheduled = 0;
+    let appeals = 0;
     let awaiting_claim = 0;
     let complete = 0;
     for (const s of streams) {
-      const bucket = bucketOf(s, nowSec);
+      const bucket = bucketOf(s, nowSec, cancellations[payrollRefKey(s)]);
       if (bucket === "scheduled") scheduled++;
+      else if (bucket === "appeals") appeals++;
       else if (bucket === "awaiting_claim") awaiting_claim++;
       else if (bucket === "complete") complete++;
       else ongoing++;
     }
-    return { ongoing, scheduled, awaiting_claim, complete, all: streams.length };
-  }, [streams]);
+    return { ongoing, scheduled, appeals, awaiting_claim, complete, all: streams.length };
+  }, [streams, cancellations]);
 
   const hasDateFilter = fromDate !== "" || toDate !== "";
   const activeFilterCount = (hasDateFilter ? 1 : 0) + (query.trim() ? 1 : 0);
@@ -150,7 +161,7 @@ export function StreamCollection({
 
     return streams.filter((s) => {
       // Lifecycle bucket is the single source of truth for the tab filters.
-      if (filter !== "all" && bucketOf(s, nowSec) !== filter) return false;
+      if (filter !== "all" && bucketOf(s, nowSec, cancellations[payrollRefKey(s)]) !== filter) return false;
 
       // Date range on the opened-at time.
       if (from !== null || to !== null) {
@@ -326,6 +337,8 @@ export function StreamCollection({
               ? "No completed streams yet."
               : filter === "scheduled"
               ? "No scheduled streams right now."
+              : filter === "appeals"
+              ? "No open appeal cases right now."
               : filter === "awaiting_claim"
               ? "No streams are awaiting claim right now."
               : "No ongoing streams right now."}

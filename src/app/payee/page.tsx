@@ -34,6 +34,7 @@ import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
 import { useNotify } from "@/hooks/useNotify";
 import { streamMath } from "@/lib/stream-math";
 import { formatUsdc } from "@/lib/utils";
+import { isOpenCancellationStatus } from "@/lib/appeals";
 
 export default function EmployeePage() {
   const { address, connected, restoring } = useActiveAddress();
@@ -113,6 +114,13 @@ export default function EmployeePage() {
     }
     return { activeCount: active, scheduledCount: scheduled, awaitingClaimCount: awaitingClaim };
   }, [displayStreams]);
+  const openAppealCount = useMemo(
+    () => displayStreams.filter((stream) => {
+      const cancellation = cancellations[payrollRefKey(stream)];
+      return cancellation ? isOpenCancellationStatus(cancellation.status) : false;
+    }).length,
+    [displayStreams, cancellations]
+  );
 
   if (!connected) {
     return (
@@ -198,6 +206,7 @@ export default function EmployeePage() {
                   ? ""
                   : `${activeCount} ongoing${scheduledCount > 0 ? ` · ${scheduledCount} scheduled` : ""}${
                       awaitingClaimCount > 0 ? ` · ${awaitingClaimCount} awaiting claim` : ""
+                    }${openAppealCount > 0 ? ` · ${openAppealCount} appeal${openAppealCount === 1 ? "" : "s"}` : ""
                     }`}
               </p>
             </div>

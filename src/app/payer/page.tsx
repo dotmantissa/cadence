@@ -31,6 +31,7 @@ import {
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
 import { formatUsdc } from "@/lib/utils";
 import type { StreamMeta } from "@/hooks/usePayroll";
+import { isOpenCancellationStatus } from "@/lib/appeals";
 import { streamMath } from "@/lib/stream-math";
 
 export default function EmployerPage() {
@@ -81,6 +82,13 @@ export default function EmployerPage() {
     }
     return { activeCount: active, scheduledCount: scheduled, awaitingClaimCount: awaitingClaim };
   }, [displayStreams]);
+  const openAppealCount = useMemo(
+    () => displayStreams.filter((stream) => {
+      const cancellation = cancellations[payrollRefKey(stream)];
+      return cancellation ? isOpenCancellationStatus(cancellation.status) : false;
+    }).length,
+    [displayStreams, cancellations]
+  );
 
   if (!connected) {
     return (
@@ -166,6 +174,7 @@ export default function EmployerPage() {
                   ? ""
                   : `${activeCount} ongoing${scheduledCount > 0 ? ` · ${scheduledCount} scheduled` : ""}${
                       awaitingClaimCount > 0 ? ` · ${awaitingClaimCount} awaiting claim` : ""
+                    }${openAppealCount > 0 ? ` · ${openAppealCount} appeal${openAppealCount === 1 ? "" : "s"}` : ""
                     }`}
               </p>
             </div>

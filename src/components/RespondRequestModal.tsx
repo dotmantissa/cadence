@@ -119,7 +119,7 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
         const streamHash = await acceptRequest(request.id);
         await waitForSuccessfulReceipt(config, streamHash);
         // Accepting funds and opens the stream — the payee's request is now live.
-        notify("stream_started", {
+        await notify("stream_started", {
           counterpartyAddress: request.payee,
           amount: request.deposit.toString(),
           rate: request.ratePerSecond.toString(),
@@ -129,7 +129,7 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
         const counterHash = await counterRequest(request.id, counterRate, counterDeposit, counterStartAt);
         await waitForSuccessfulReceipt(config, counterHash);
         // Countering sends the payee new terms to accept or decline.
-        notify("counter_offer", {
+        await notify("counter_offer", {
           counterpartyAddress: request.payee,
           amount: counterDeposit.toString(),
           rate: counterRate.toString(),

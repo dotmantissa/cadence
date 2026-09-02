@@ -73,7 +73,7 @@ export default function EmployeePage() {
         await waitForSuccessfulReceipt(config, hash);
         await refetch();
         if (stream && unclaimed > 0n) {
-          notify("stream_claimed", {
+          await notify("stream_claimed", {
             counterpartyAddress: stream.employer,
             amount: unclaimed.toString(),
             perspective: "employee",

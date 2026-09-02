@@ -192,7 +192,7 @@ export function RequestStreamModal({ onClose, onSuccess }: Props) {
       const requestHash = await requestStream(recipient, ratePerSecond, depositAmount, invoiceRef, startAt);
       await waitForSuccessfulReceipt(config, requestHash);
       // The caller is the payee asking; notify the payer they have a request.
-      notify("request_received", {
+      await notify("request_received", {
         counterpartyAddress: recipient,
         amount: depositAmount.toString(),
         rate: ratePerSecond.toString(),

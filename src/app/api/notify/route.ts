@@ -44,6 +44,8 @@ type Party = {
   settings: Record<string, unknown> | null;
 };
 
+type DeliveryStatus = "sent" | "no_email" | "disabled" | "failed";
+
 /** How a person is shown to the other side: @handle, then name, then address. */
 function label(p: { username: string | null; displayName: string | null }, address: string): string {
   if (p.username) return `@${p.username}`;
@@ -68,16 +70,17 @@ function selfParty(user: User): Party {
 /**
  * Send to one party only if they have an email and haven't switched this
  * category off. Every category defaults to on, so an account that never touched
- * the toggles still gets mail. Best-effort: a delivery failure is swallowed.
+ * the toggles still gets mail. The status is returned for server-side
+ * observability without exposing email addresses to the client.
  */
 async function send(
   party: Party | null,
   category: NotificationCategory,
   content: EmailContent
-): Promise<void> {
-  if (!party?.email) return;
-  if (!notificationEnabled(party.settings, category)) return;
-  await sendEmail(party.email, content);
+): Promise<DeliveryStatus> {
+  if (!party?.email) return "no_email";
+  if (!notificationEnabled(party.settings, category)) return "disabled";
+  return (await sendEmail(party.email, content)) ? "sent" : "failed";
 }
 
 /** "$1,200.00" from a base-unit string, or null if it doesn't parse. */
@@ -146,7 +149,10 @@ export async function POST(req: Request) {
   if ("response" in gate) return gate.response;
 
   // Email off entirely: accept and no-op so the client never has to care.
-  if (!emailEnabled) return NextResponse.json({ ok: true, sent: false });
+  if (!emailEnabled) {
+    console.warn("[notify] email provider is not configured");
+    return NextResponse.json({ ok: true, sent: 0 });
+  }
 
   let body: unknown;
   try {
@@ -169,6 +175,16 @@ export async function POST(req: Request) {
   const counterLabel = counterpartyAddress
     ? label(counter ?? { username: null, displayName: null }, counterpartyAddress)
     : "someone";
+  const deliveryStatuses: DeliveryStatus[] = [];
+  const sendAndRecord = async (
+    party: Party | null,
+    category: NotificationCategory,
+    content: EmailContent
+  ) => {
+    const status = await send(party, category, content);
+    deliveryStatuses.push(status);
+    return status;
+  };
 
   const amount = money(b.amount);
   const rate = dailyRate(b.rate);
@@ -197,7 +213,7 @@ export async function POST(req: Request) {
       break;
     }
     case "signin": {
-      await send(
+      await sendAndRecord(
         self,
         "signin",
         signinEmail({
@@ -216,11 +232,11 @@ export async function POST(req: Request) {
       const callerIsPayer = str(b.perspective) !== "employee";
       const wantSelf = b.notifySelf !== false;
       if (callerIsPayer) {
-        if (wantSelf) await send(self, "streams", streamStartedPayerEmail(facts, selfName));
-        await send(counter, "streams", streamStartedPayeeEmail(factsToCounter, counterName));
+        if (wantSelf) await sendAndRecord(self, "streams", streamStartedPayerEmail(facts, selfName));
+        await sendAndRecord(counter, "streams", streamStartedPayeeEmail(factsToCounter, counterName));
       } else {
-        if (wantSelf) await send(self, "streams", streamStartedPayeeEmail(facts, selfName));
-        await send(counter, "streams", streamStartedPayerEmail(factsToCounter, counterName));
+        if (wantSelf) await sendAndRecord(self, "streams", streamStartedPayeeEmail(facts, selfName));
+        await sendAndRecord(counter, "streams", streamStartedPayerEmail(factsToCounter, counterName));
       }
       break;
     }
@@ -229,11 +245,11 @@ export async function POST(req: Request) {
       // this, so `perspective` decides which wording goes to whom.
       const callerIsPayer = str(b.perspective) !== "employee";
       if (callerIsPayer) {
-        await send(self, "streams", streamActivatedPayerEmail(facts, selfName));
-        await send(counter, "streams", streamActivatedPayeeEmail(factsToCounter, counterName));
+        await sendAndRecord(self, "streams", streamActivatedPayerEmail(facts, selfName));
+        await sendAndRecord(counter, "streams", streamActivatedPayeeEmail(factsToCounter, counterName));
       } else {
-        await send(self, "streams", streamActivatedPayeeEmail(facts, selfName));
-        await send(counter, "streams", streamActivatedPayerEmail(factsToCounter, counterName));
+        await sendAndRecord(self, "streams", streamActivatedPayeeEmail(facts, selfName));
+        await sendAndRecord(counter, "streams", streamActivatedPayerEmail(factsToCounter, counterName));
       }
       break;
     }
@@ -242,19 +258,19 @@ export async function POST(req: Request) {
       // `amount` is what was just claimed.
       const callerIsPayee = str(b.perspective) !== "employer";
       if (callerIsPayee) {
-        await send(self, "claims", streamClaimedPayeeEmail(facts, selfName));
-        await send(counter, "claims", streamClaimedPayerEmail(factsToCounter, counterName));
+        await sendAndRecord(self, "claims", streamClaimedPayeeEmail(facts, selfName));
+        await sendAndRecord(counter, "claims", streamClaimedPayerEmail(factsToCounter, counterName));
       } else {
-        await send(self, "claims", streamClaimedPayerEmail(facts, selfName));
-        await send(counter, "claims", streamClaimedPayeeEmail(factsToCounter, counterName));
+        await sendAndRecord(self, "claims", streamClaimedPayerEmail(facts, selfName));
+        await sendAndRecord(counter, "claims", streamClaimedPayeeEmail(factsToCounter, counterName));
       }
       break;
     }
     case "stream_topped_up": {
       // Always fired by the payer. `amount` is what was added; `rate` is the new
       // (raised) daily rate, or empty if the rate was left unchanged.
-      await send(self, "topups", streamToppedUpPayerEmail(facts, selfName));
-      await send(counter, "topups", streamToppedUpPayeeEmail(factsToCounter, counterName));
+      await sendAndRecord(self, "topups", streamToppedUpPayerEmail(facts, selfName));
+      await sendAndRecord(counter, "topups", streamToppedUpPayeeEmail(factsToCounter, counterName));
       break;
     }
     case "stream_cancelled": {
@@ -262,12 +278,12 @@ export async function POST(req: Request) {
       // hears the refund; the payee hears they keep what already streamed.
       const streamed = money(b.streamed);
       const refund = money(b.refund);
-      await send(
+      await sendAndRecord(
         self,
         "cancellations",
         streamCancelledPayerEmail({ counterparty: counterLabel, refund, streamed, reference }, selfName)
       );
-      await send(
+      await sendAndRecord(
         counter,
         "cancellations",
         streamCancelledPayeeEmail({ counterparty: myLabel, streamed, reference }, counterName)
@@ -276,17 +292,17 @@ export async function POST(req: Request) {
     }
     case "request_received": {
       // The caller is the requester (payee); notify the payer they asked.
-      await send(counter, "requests", requestReceivedEmail(factsToCounter, counterName));
+      await sendAndRecord(counter, "requests", requestReceivedEmail(factsToCounter, counterName));
       break;
     }
     case "counter_offer": {
       // The caller is the payer countering; notify the original requester (payee).
-      await send(counter, "requests", counterOfferEmail(factsToCounter, counterName));
+      await sendAndRecord(counter, "requests", counterOfferEmail(factsToCounter, counterName));
       break;
     }
     case "receipt": {
       const name = str(b.counterpartyName, 120);
-      await send(
+      await sendAndRecord(
         self,
         "receipts",
         receiptEmail(
@@ -305,5 +321,16 @@ export async function POST(req: Request) {
       return badRequest("unknown event");
   }
 
-  return NextResponse.json({ ok: true, sent: true });
+  const sent = deliveryStatuses.filter((status) => status === "sent").length;
+  const skipped = deliveryStatuses.filter((status) => status !== "sent").length;
+  if (skipped > 0) {
+    console.warn("[notify] delivery incomplete", {
+      event,
+      selfHasEmail: !!self.email,
+      counterpartyMatched: !!counter,
+      counterpartyHasEmail: !!counter?.email,
+      statuses: deliveryStatuses,
+    });
+  }
+  return NextResponse.json({ ok: true, sent, attempted: deliveryStatuses.length });
 }

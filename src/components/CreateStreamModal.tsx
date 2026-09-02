@@ -260,7 +260,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         deliverablesEnabled ? deliverables.trim() : ""
       );
       await waitForSuccessfulReceipt(config, streamHash);
-      notify("stream_started", {
+      await notify("stream_started", {
         counterpartyAddress: singleRecipient,
         amount: depositAmount.toString(),
         rate: ratePerSecond.toString(),
@@ -297,9 +297,10 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
     if (result.ok) {
       // One payee email per recipient; the payer gets a single confirmation
       // (notifySelf only on the first) instead of one per stream.
-      batchPlan.rows
+      await Promise.all(
+        batchPlan.rows
         .filter((p) => p.ok)
-        .forEach((p, i) => {
+        .map((p, i) =>
           notify("stream_started", {
             counterpartyAddress: p.row.walletAddress!,
             amount: p.deposit.toString(),
@@ -307,8 +308,9 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
             reference: invoiceRef || null,
             starts: startAt > 0n ? formatStart(startAt) : null,
             notifySelf: i === 0,
-          });
-        });
+          })
+        )
+      );
       onSuccess?.();
       onClose();
     }

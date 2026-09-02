@@ -220,7 +220,7 @@ export function StreamReceiptModal({ stream, perspective, counterpartyName, onCl
     // open, not on every re-download or share.
     if (!notified.current) {
       notified.current = true;
-      notify("receipt", {
+      await notify("receipt", {
         counterpartyName: counterpartyName ?? null,
         amount: streamedSoFar.toString(),
         reference: stream.invoiceRef || null,

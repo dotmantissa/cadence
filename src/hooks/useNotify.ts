@@ -4,11 +4,13 @@ import { useCallback } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 
 /**
- * Fire-and-forget client for account-activity emails. Every call posts to
- * /api/notify with the Privy bearer, and the server decides who to email and
- * what to say. Nothing here ever throws or blocks: notifications are a courtesy
- * on top of an action that already succeeded on-chain, so a failed send is
- * swallowed silently rather than surfaced to the user.
+ * Client for account-activity emails. Every call posts to /api/notify with the
+ * Privy bearer, and the server decides who to email and what to say.
+ *
+ * Callers may await this after a confirmed chain action. A notification failure
+ * still resolves to false and never changes the outcome of the chain action,
+ * but awaiting the request prevents a modal close/navigation from abandoning
+ * the request before the server can process it.
  */
 
 export type NotifyEvent =
@@ -60,11 +62,11 @@ export function useNotify() {
   const { getAccessToken } = usePrivy();
 
   const notify = useCallback(
-    async (event: NotifyEvent, payload: NotifyPayload = {}): Promise<void> => {
+    async (event: NotifyEvent, payload: NotifyPayload = {}): Promise<boolean> => {
       try {
         const token = await getAccessToken();
-        if (!token) return;
-        await fetch("/api/notify", {
+        if (!token) return false;
+        const response = await fetch("/api/notify", {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -73,8 +75,26 @@ export function useNotify() {
           body: JSON.stringify({ event, ...payload }),
           keepalive: true,
         });
-      } catch {
-        // Notifications never block or surface. Swallow and move on.
+        let body: { ok?: boolean; sent?: number } = {};
+        try {
+          body = (await response.json()) as typeof body;
+        } catch {
+          // The status code still tells us whether the request was accepted.
+        }
+        if (!response.ok || body.ok !== true) {
+          console.warn("[notify] request failed", {
+            event,
+            status: response.status,
+          });
+          return false;
+        }
+        return (body.sent ?? 0) > 0;
+      } catch (error) {
+        console.warn("[notify] request unavailable", {
+          event,
+          error: error instanceof Error ? error.message : "unknown error",
+        });
+        return false;
       }
     },
     [getAccessToken]

@@ -6,7 +6,7 @@ import type { StreamMeta } from "@/hooks/usePayroll";
 import { parseUsdc, formatUsdc, rateToDaily, formatRunway } from "@/lib/utils";
 import { streamMath } from "@/lib/stream-math";
 import { useAccount, useConfig, usePublicClient } from "wagmi";
-import { waitForTransactionReceipt } from "@wagmi/core";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { cn } from "@/lib/utils";
 import { PAYROLL_ADDRESS, PAYROLL_ABI } from "@/lib/contracts";
 import { useNotify } from "@/hooks/useNotify";
@@ -62,43 +62,37 @@ export function TopUpModal({ stream, onClose }: Props) {
     try {
       if (needsApproval) {
         setTxStatus("approving");
-        await approve(depositAmount);
+        const approvalHash = await approve(depositAmount);
+        await waitForSuccessfulReceipt(config, approvalHash);
       }
       setTxStatus("topping-up");
       const hash = await topUp(streamId, depositAmount);
 
       // Notify both sides once the top-up confirms. We read the rate back so the
-      // email can announce a raised rate: on a live stream the contract holds the
-      // finish date and bumps the rate, so `newRate !== oldRate` and the email
-      // says so; on a scheduled/additive top-up the rate is unchanged and the
-      // copy stays neutral. Best-effort — never blocks the UI, so it runs after
-      // onClose().
+      // email can announce a raised rate on a live stream.
       const added = depositAmount.toString();
       const oldRate = stream.ratePerSecond;
       const employee = stream.employee;
       const ref = stream.invoiceRef || null;
-      void (async () => {
-        let newRate: bigint | null = null;
-        try {
-          await waitForTransactionReceipt(config, { hash });
-          const tuple = await publicClient?.readContract({
-            address: PAYROLL_ADDRESS,
-            abi: PAYROLL_ABI,
-            functionName: "streams",
-            args: [streamId],
-          });
-          if (Array.isArray(tuple)) newRate = tuple[2] as bigint;
-        } catch {
-          // Confirmation or read failed — fall back to neutral (no rate) copy.
-        }
-        notify("stream_topped_up", {
-          counterpartyAddress: employee,
-          amount: added,
-          rate: newRate !== null && newRate !== oldRate ? newRate.toString() : null,
-          reference: ref,
+      await waitForSuccessfulReceipt(config, hash);
+      let newRate: bigint | null = null;
+      try {
+        const tuple = await publicClient?.readContract({
+          address: PAYROLL_ADDRESS,
+          abi: PAYROLL_ABI,
+          functionName: "streams",
+          args: [streamId],
         });
-      })();
-
+        if (Array.isArray(tuple)) newRate = tuple[2] as bigint;
+      } catch {
+        // A successful top-up remains successful if the follow-up read fails.
+      }
+      await notify("stream_topped_up", {
+        counterpartyAddress: employee,
+        amount: added,
+        rate: newRate !== null && newRate !== oldRate ? newRate.toString() : null,
+        reference: ref,
+      });
       onClose();
     } catch (err: unknown) {
       const e = err as { shortMessage?: string; message?: string };

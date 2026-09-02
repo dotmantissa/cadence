@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useConfig } from "wagmi";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 import {
   useRequestActions,
   useApproveUsdc,
@@ -47,6 +48,7 @@ function toLocalInput(unixSec: bigint): string {
  */
 export function RespondRequestModal({ request, counterpartyName, onClose, onSuccess }: Props) {
   const { address } = useAccount();
+  const config = useConfig();
   const { notify } = useNotify();
   const [mode, setMode] = useState<Mode>("accept");
 
@@ -109,11 +111,13 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
     try {
       if (needsApproval) {
         setTxStatus("approving");
-        await approve(deposit);
+        const approvalHash = await approve(deposit);
+        await waitForSuccessfulReceipt(config, approvalHash);
       }
       setTxStatus("submitting");
       if (mode === "accept") {
-        await acceptRequest(request.id);
+        const streamHash = await acceptRequest(request.id);
+        await waitForSuccessfulReceipt(config, streamHash);
         // Accepting funds and opens the stream — the payee's request is now live.
         notify("stream_started", {
           counterpartyAddress: request.payee,
@@ -122,7 +126,8 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
           reference: request.invoiceRef || null,
         });
       } else {
-        await counterRequest(request.id, counterRate, counterDeposit, counterStartAt);
+        const counterHash = await counterRequest(request.id, counterRate, counterDeposit, counterStartAt);
+        await waitForSuccessfulReceipt(config, counterHash);
         // Countering sends the payee new terms to accept or decline.
         notify("counter_offer", {
           counterpartyAddress: request.payee,

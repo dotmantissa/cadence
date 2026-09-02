@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useConfig } from "wagmi";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { useRequestActions } from "@/hooks/usePayroll";
 import { parseUsdc, formatUsdc, shortenAddress, cn } from "@/lib/utils";
 import { useApi } from "@/hooks/useApi";
@@ -39,6 +41,7 @@ function formatStart(startAt: bigint): string {
  * the balance/approval machinery, since the requester isn't paying.
  */
 export function RequestStreamModal({ onClose, onSuccess }: Props) {
+  const config = useConfig();
   const { api } = useApi();
   const { notify } = useNotify();
   const [mode, setMode] = useState<Mode>("username");
@@ -186,7 +189,8 @@ export function RequestStreamModal({ onClose, onSuccess }: Props) {
     setTxError(null);
     setSubmitting(true);
     try {
-      await requestStream(recipient, ratePerSecond, depositAmount, invoiceRef, startAt);
+      const requestHash = await requestStream(recipient, ratePerSecond, depositAmount, invoiceRef, startAt);
+      await waitForSuccessfulReceipt(config, requestHash);
       // The caller is the payee asking; notify the payer they have a request.
       notify("request_received", {
         counterpartyAddress: recipient,

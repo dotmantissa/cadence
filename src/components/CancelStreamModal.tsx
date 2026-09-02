@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useConfig } from "wagmi";
-import { waitForTransactionReceipt } from "@wagmi/core";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { useCancelStream } from "@/hooks/usePayroll";
 import type { StreamMeta } from "@/hooks/usePayroll";
 import { formatUsdc } from "@/lib/utils";
@@ -28,10 +28,10 @@ export function CancelStreamModal({ stream, onClose, onSubmitted }: Props) {
     e.preventDefault();
     if (reason.trim().length < 20) return;
     setError(null);
-    setPending(true);
+      setPending(true);
     try {
       const hash = await cancel(stream.id, reason.trim());
-      await waitForTransactionReceipt(config, { hash });
+      await waitForSuccessfulReceipt(config, hash);
       onSubmitted();
     } catch (err: unknown) {
       const e = err as { shortMessage?: string; message?: string };

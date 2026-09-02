@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useConfig } from "wagmi";
-import { waitForTransactionReceipt } from "@wagmi/core";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { motion } from "framer-motion";
 import { Wallet, Waves, Eye, EyeOff, Send } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
@@ -70,7 +70,7 @@ export default function EmployeePage() {
       const unclaimed = stream ? streamMath(stream).unclaimed : 0n;
       try {
         const hash = await withdraw(id);
-        await waitForTransactionReceipt(config, { hash });
+        await waitForSuccessfulReceipt(config, hash);
         await refetch();
         if (stream && unclaimed > 0n) {
           notify("stream_claimed", {

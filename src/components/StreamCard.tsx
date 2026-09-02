@@ -381,7 +381,7 @@ export function StreamCard({
                 <Plus size={15} /> Top up
               </motion.button>
             )}
-            {active && (
+            {(notStarted || streaming) && (
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.97 }}

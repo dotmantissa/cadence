@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useConfig } from "wagmi";
-import { waitForTransactionReceipt } from "@wagmi/core";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { keepPreviousData } from "@tanstack/react-query";
 import { PAYROLL_ADDRESS, PAYROLL_ABI, USDC_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 
@@ -591,7 +591,7 @@ export function useBatchCreateStreams() {
         gas: GAS_LIMITS.approve,
         ...ARC_FEE,
       });
-      await waitForTransactionReceipt(config, { hash: approveHash });
+      await waitForSuccessfulReceipt(config, approveHash);
 
       // 2. Open every stream in ONE transaction. All streams in a batch share
       //    the same start time (set together in the modal), so we read it off
@@ -615,7 +615,7 @@ export function useBatchCreateStreams() {
         gas: batchCreateGasLimit(streams.length),
         ...ARC_FEE,
       });
-      await waitForTransactionReceipt(config, { hash });
+      await waitForSuccessfulReceipt(config, hash);
 
       setProgress((prev) => prev.map(() => "success"));
       setRunning(false);

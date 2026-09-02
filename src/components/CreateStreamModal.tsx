@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useCreateStream, useApproveUsdc, useUsdcAllowance, useUsdcBalance, useBatchCreateStreams } from "@/hooks/usePayroll";
 import { parseUsdc, formatUsdc, shortenAddress } from "@/lib/utils";
-import { useAccount } from "wagmi";
+import { useAccount, useConfig } from "wagmi";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { cn } from "@/lib/utils";
 import { useApi } from "@/hooks/useApi";
 import { useNotify } from "@/hooks/useNotify";
@@ -44,6 +45,7 @@ function formatStart(startAt: bigint): string {
 
 export function CreateStreamModal({ onClose, onSuccess }: Props) {
   const { address } = useAccount();
+  const config = useConfig();
   const { api } = useApi();
   const { notify } = useNotify();
   const [streamMode, setStreamMode] = useState<StreamMode>("single");
@@ -245,10 +247,11 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
     try {
       if (needsApproval) {
         setTxStatus("approving");
-        await approve(depositAmount);
+        const approvalHash = await approve(depositAmount);
+        await waitForSuccessfulReceipt(config, approvalHash);
       }
       setTxStatus("creating");
-      await createStream(
+      const streamHash = await createStream(
         singleRecipient,
         ratePerSecond,
         depositAmount,
@@ -256,6 +259,7 @@ export function CreateStreamModal({ onClose, onSuccess }: Props) {
         startAt,
         deliverablesEnabled ? deliverables.trim() : ""
       );
+      await waitForSuccessfulReceipt(config, streamHash);
       notify("stream_started", {
         counterpartyAddress: singleRecipient,
         amount: depositAmount.toString(),

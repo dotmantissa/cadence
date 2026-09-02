@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useConfig } from "wagmi";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
+import type { Hash } from "viem";
 import {
   useRequestsMeta,
   useRequestActions,
@@ -48,6 +51,7 @@ function isOpen(r: RequestMeta): boolean {
  * bubble `onChanged` so the parent refetches the id list.
  */
 export function RequestCollection({ ids, perspective, loading = false, onChanged, emptyState }: Props) {
+  const config = useConfig();
   const { api, authenticated } = useApi();
   const [tab, setTab] = useState<Tab>("open");
   const [identities, setIdentities] = useState<Record<string, Identity>>({});
@@ -105,10 +109,11 @@ export function RequestCollection({ ids, perspective, loading = false, onChanged
   };
 
   /** Run a write, guarding the card and refetching on settle. */
-  async function run(id: bigint, fn: () => Promise<unknown>) {
+  async function run(id: bigint, fn: () => Promise<Hash>) {
     setBusyId(id);
     try {
-      await fn();
+      const hash = await fn();
+      await waitForSuccessfulReceipt(config, hash);
       onChanged?.();
     } catch {
       /* wallet rejected or reverted — leave the card as-is */

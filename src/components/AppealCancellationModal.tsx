@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useConfig } from "wagmi";
-import { waitForTransactionReceipt } from "@wagmi/core";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { useApi } from "@/hooks/useApi";
 import { useAppealCancellation } from "@/hooks/usePayroll";
 import type { CancellationMeta, StreamMeta } from "@/hooks/usePayroll";
@@ -85,7 +85,7 @@ export function AppealCancellationModal({ stream, cancellation, onClose, onSubmi
       setWorkflowCaseId(prepared.appeal.caseId);
       setStatus("onchain");
       const hash = await appeal(stream.id, prepared.appeal.evidenceUri, prepared.appeal.evidenceHash);
-      await waitForTransactionReceipt(config, { hash });
+      await waitForSuccessfulReceipt(config, hash);
       setStatus("workflow");
     } catch (err: unknown) {
       const e = err as { shortMessage?: string; message?: string };

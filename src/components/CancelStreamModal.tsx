@@ -30,7 +30,7 @@ export function CancelStreamModal({ stream, onClose, onSubmitted }: Props) {
     setError(null);
       setPending(true);
     try {
-      const hash = await cancel(stream.id, reason.trim());
+      const hash = await cancel(stream.id, reason.trim(), stream.payrollAddress);
       await waitForSuccessfulReceipt(config, hash);
       onSubmitted();
     } catch (err: unknown) {

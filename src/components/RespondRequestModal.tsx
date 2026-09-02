@@ -70,7 +70,7 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
   const [txError, setTxError] = useState<string | null>(null);
 
   const { data: balance } = useUsdcBalance(address);
-  const { data: allowance } = useUsdcAllowance(address);
+  const { data: allowance } = useUsdcAllowance(address, request.payrollAddress);
   const { approve } = useApproveUsdc();
   const { acceptRequest, counterRequest } = useRequestActions();
 
@@ -111,12 +111,12 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
     try {
       if (needsApproval) {
         setTxStatus("approving");
-        const approvalHash = await approve(deposit);
+        const approvalHash = await approve(deposit, request.payrollAddress);
         await waitForSuccessfulReceipt(config, approvalHash);
       }
       setTxStatus("submitting");
       if (mode === "accept") {
-        const streamHash = await acceptRequest(request.id);
+        const streamHash = await acceptRequest(request.id, request.payrollAddress);
         await waitForSuccessfulReceipt(config, streamHash);
         // Accepting funds and opens the stream — the payee's request is now live.
         await notify("stream_started", {
@@ -126,7 +126,13 @@ export function RespondRequestModal({ request, counterpartyName, onClose, onSucc
           reference: request.invoiceRef || null,
         });
       } else {
-        const counterHash = await counterRequest(request.id, counterRate, counterDeposit, counterStartAt);
+        const counterHash = await counterRequest(
+          request.id,
+          counterRate,
+          counterDeposit,
+          counterStartAt,
+          request.payrollAddress
+        );
         await waitForSuccessfulReceipt(config, counterHash);
         // Countering sends the payee new terms to accept or decline.
         await notify("counter_offer", {

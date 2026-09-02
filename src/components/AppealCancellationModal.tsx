@@ -84,7 +84,12 @@ export function AppealCancellationModal({ stream, cancellation, onClose, onSubmi
       });
       setWorkflowCaseId(prepared.appeal.caseId);
       setStatus("onchain");
-      const hash = await appeal(stream.id, prepared.appeal.evidenceUri, prepared.appeal.evidenceHash);
+      const hash = await appeal(
+        stream.id,
+        prepared.appeal.evidenceUri,
+        prepared.appeal.evidenceHash,
+        stream.payrollAddress
+      );
       await waitForSuccessfulReceipt(config, hash);
       setStatus("workflow");
     } catch (err: unknown) {

@@ -26,6 +26,7 @@ import {
   usePayerRequests,
   useRequestsMeta,
   ReqStatus,
+  payrollRefKey,
 } from "@/hooks/usePayroll";
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
 import { formatUsdc } from "@/lib/utils";
@@ -49,7 +50,7 @@ export default function EmployerPage() {
   const { deliverables } = useDeliverablesMeta(ordered);
   const { cancellations } = useCancellationsMeta(ordered);
   const displayStreams = useMemo(
-    () => streams.map((stream) => ({ ...stream, deliverables: deliverables[stream.id.toString()] ?? "" })),
+    () => streams.map((stream) => ({ ...stream, deliverables: deliverables[payrollRefKey(stream)] ?? "" })),
     [streams, deliverables]
   );
   const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
@@ -180,10 +181,10 @@ export default function EmployerPage() {
             perspective="employer"
             loading={loadingStreams}
             cancellations={cancellations}
-            onCancel={(id) => setCancelStream(displayStreams.find((s) => s.id === id) ?? null)}
-            onTopUp={(id) => setTopUpStream(displayStreams.find((s) => s.id === id) ?? null)}
-            onOpenBant={(id) => {
-              const caseId = cancellations[id.toString()]?.caseId;
+            onCancel={(ref) => setCancelStream(displayStreams.find((s) => payrollRefKey(s) === payrollRefKey(ref)) ?? null)}
+            onTopUp={(ref) => setTopUpStream(displayStreams.find((s) => payrollRefKey(s) === payrollRefKey(ref)) ?? null)}
+            onOpenBant={(ref) => {
+              const caseId = cancellations[payrollRefKey(ref)]?.caseId;
               if (caseId && !/^0x0+$/.test(caseId)) setBantCaseId(caseId);
             }}
             emptyState={

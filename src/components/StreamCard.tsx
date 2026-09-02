@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowUpRight, Plus, X, Radio, Clock, CheckCircle2, Hourglass, XCircle, ExternalLink, MessageSquare } from "lucide-react";
 import type { CancellationMeta, StreamMeta } from "@/hooks/usePayroll";
+import { payrollRefKey } from "@/hooks/usePayroll";
 import { streamMath } from "@/lib/stream-math";
 import { StreamTicker } from "./StreamTicker";
 import { formatRunway, formatUsdc, rateToDaily, rateToMonthly, shortenAddress, streamExplorerUrl } from "@/lib/utils";
-import { PAYROLL_ADDRESS } from "@/lib/contracts";
 import { useNotify } from "@/hooks/useNotify";
 import { cn } from "@/lib/utils";
 
@@ -85,7 +85,7 @@ export function StreamCard({
     const flipped = wasNotStarted.current && !notStarted;
     wasNotStarted.current = notStarted;
     if (!flipped || !active) return;
-    const key = `cadence:activated:${streamId.toString()}`;
+    const key = `cadence:activated:${payrollRefKey(stream)}`;
     try {
       if (localStorage.getItem(key)) return;
       localStorage.setItem(key, "1");
@@ -400,7 +400,7 @@ export function StreamCard({
 
       <div className="relative mt-4 flex justify-end">
         <a
-          href={streamExplorerUrl(PAYROLL_ADDRESS, streamId)}
+          href={streamExplorerUrl(stream.payrollAddress, streamId)}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}

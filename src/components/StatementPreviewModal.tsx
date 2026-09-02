@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { Modal } from "./Modal";
-import type { StreamMeta } from "@/hooks/usePayroll";
+import { payrollRefKey, type StreamMeta } from "@/hooks/usePayroll";
 import { streamMath } from "@/lib/stream-math";
 import { formatUsdc, shortenAddress } from "@/lib/utils";
 import { Download, Loader2 } from "lucide-react";
@@ -172,7 +172,7 @@ export function StatementPreviewModal({
             <tbody>
               {streams.map((s, i) => (
                 <tr
-                  key={s.id.toString()}
+                  key={payrollRefKey(s)}
                   className={i % 2 === 0 ? "bg-paper" : "bg-paper-warm"}
                 >
                   <td className="px-3 py-2.5 font-mono text-xs text-ink/70">

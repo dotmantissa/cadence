@@ -6,7 +6,7 @@ import { StreamCard } from "./StreamCard";
 import { StreamReceiptModal } from "./StreamReceiptModal";
 import { StatementFilterModal } from "./StatementFilterModal";
 import { Pagination, usePagination } from "./Pagination";
-import { type CancellationMeta, type StreamMeta } from "@/hooks/usePayroll";
+import { payrollRefKey, type CancellationMeta, type PayrollRef, type StreamMeta } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import { streamMath } from "@/lib/stream-math";
@@ -23,12 +23,12 @@ interface Props {
   perspective: "employer" | "employee";
   /** True while the streams are still loading on a cold cache. */
   loading?: boolean;
-  onWithdraw?: (id: bigint) => void;
-  onCancel?: (id: bigint) => void;
-  onTopUp?: (id: bigint) => void;
+  onWithdraw?: (ref: PayrollRef) => void;
+  onCancel?: (ref: PayrollRef) => void;
+  onTopUp?: (ref: PayrollRef) => void;
   cancellations?: Record<string, CancellationMeta>;
-  onAppeal?: (id: bigint) => void;
-  onOpenBant?: (id: bigint) => void;
+  onAppeal?: (ref: PayrollRef) => void;
+  onOpenBant?: (ref: PayrollRef) => void;
   /** Rendered when this wallet has no streams at all. */
   emptyState: React.ReactNode;
 }
@@ -328,17 +328,17 @@ export function StreamCollection({
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           {pager.pageItems.map((s) => (
             <StreamCard
-              key={s.id.toString()}
+              key={payrollRefKey(s)}
               stream={s}
               perspective={perspective}
               counterparty={identities[counterpartyOf(s)] ?? null}
               onOpenReceipt={() => setReceipt(s)}
-              onWithdraw={onWithdraw ? () => onWithdraw(s.id) : undefined}
-              onCancel={onCancel ? () => onCancel(s.id) : undefined}
-              onTopUp={onTopUp ? () => onTopUp(s.id) : undefined}
-              cancellation={cancellations[s.id.toString()]}
-              onAppeal={onAppeal ? () => onAppeal(s.id) : undefined}
-              onOpenBant={onOpenBant ? () => onOpenBant(s.id) : undefined}
+              onWithdraw={onWithdraw ? () => onWithdraw(s) : undefined}
+              onCancel={onCancel ? () => onCancel(s) : undefined}
+              onTopUp={onTopUp ? () => onTopUp(s) : undefined}
+              cancellation={cancellations[payrollRefKey(s)]}
+              onAppeal={onAppeal ? () => onAppeal(s) : undefined}
+              onOpenBant={onOpenBant ? () => onOpenBant(s) : undefined}
             />
           ))}
         </div>

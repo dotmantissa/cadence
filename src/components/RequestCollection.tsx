@@ -8,6 +8,7 @@ import {
   useRequestsMeta,
   useRequestActions,
   ReqStatus,
+  payrollRefKey,
   type RequestMeta,
 } from "@/hooks/usePayroll";
 import { useApi } from "@/hooks/useApi";
@@ -24,7 +25,7 @@ const PAGE_SIZE = 4;
 
 interface Props {
   /** Request IDs for this wallet in the given role, newest-first. */
-  ids: readonly bigint[];
+  ids: readonly { id: bigint; payrollAddress: `0x${string}` }[];
   perspective: ReqPerspective;
   loading?: boolean;
   /** Re-fetch the id list after an action changes on-chain state. */
@@ -56,7 +57,7 @@ export function RequestCollection({ ids, perspective, loading = false, onChanged
   const [tab, setTab] = useState<Tab>("open");
   const [identities, setIdentities] = useState<Record<string, Identity>>({});
   const [responding, setResponding] = useState<RequestMeta | null>(null);
-  const [busyId, setBusyId] = useState<bigint | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const { requests } = useRequestsMeta(ids);
   const actions = useRequestActions();
@@ -109,8 +110,11 @@ export function RequestCollection({ ids, perspective, loading = false, onChanged
   };
 
   /** Run a write, guarding the card and refetching on settle. */
-  async function run(id: bigint, fn: () => Promise<Hash>) {
-    setBusyId(id);
+  async function run(
+    request: RequestMeta,
+    fn: () => Promise<Hash>
+  ) {
+    setBusyId(payrollRefKey(request));
     try {
       const hash = await fn();
       await waitForSuccessfulReceipt(config, hash);
@@ -162,21 +166,21 @@ export function RequestCollection({ ids, perspective, loading = false, onChanged
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           {pager.pageItems.map((r) => (
             <RequestCard
-              key={r.id.toString()}
+              key={payrollRefKey(r)}
               request={r}
               perspective={perspective}
               counterpartyName={nameFor(r)}
-              busy={busyId === r.id}
+              busy={busyId === payrollRefKey(r)}
               // Payer, pending
               onRespond={() => setResponding(r)}
-              onDecline={() => run(r.id, () => actions.rejectRequest(r.id))}
+              onDecline={() => run(r, () => actions.rejectRequest(r.id, r.payrollAddress))}
               // Payer, expired counter
-              onReclaim={() => run(r.id, () => actions.reclaimExpiredCounter(r.id))}
+              onReclaim={() => run(r, () => actions.reclaimExpiredCounter(r.id, r.payrollAddress))}
               // Payee, pending
-              onCancel={() => run(r.id, () => actions.cancelRequest(r.id))}
+              onCancel={() => run(r, () => actions.cancelRequest(r.id, r.payrollAddress))}
               // Payee, countered
-              onAcceptCounter={() => run(r.id, () => actions.acceptCounter(r.id))}
-              onRejectCounter={() => run(r.id, () => actions.rejectCounter(r.id))}
+              onAcceptCounter={() => run(r, () => actions.acceptCounter(r.id, r.payrollAddress))}
+              onRejectCounter={() => run(r, () => actions.rejectCounter(r.id, r.payrollAddress))}
             />
           ))}
         </div>

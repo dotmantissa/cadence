@@ -4,7 +4,22 @@ import { useMemo, useRef, useState } from "react";
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useConfig } from "wagmi";
 import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { keepPreviousData } from "@tanstack/react-query";
-import { PAYROLL_ADDRESS, PAYROLL_ABI, USDC_ADDRESS, ERC20_ABI } from "@/lib/contracts";
+import {
+  PAYROLL_ABI,
+  PAYROLL_ADDRESS,
+  PAYROLL_ADDRESSES,
+  USDC_ADDRESS,
+  ERC20_ABI,
+} from "@/lib/contracts";
+
+export interface PayrollRef {
+  id: bigint;
+  payrollAddress: `0x${string}`;
+}
+
+export function payrollRefKey(ref: Pick<PayrollRef, "id" | "payrollAddress">): string {
+  return `${ref.payrollAddress.toLowerCase()}:${ref.id.toString()}`;
+}
 
 /**
  * Arc mandates `maxFeePerGas >= 20 Gwei` (its minimum base fee) or a transaction
@@ -72,6 +87,7 @@ function batchCreateGasLimit(count: number): bigint {
 /** Decoded shape of a `streams(id)` tuple, keyed for readability. */
 export interface StreamMeta {
   id: bigint;
+  payrollAddress: `0x${string}`;
   employer: `0x${string}`;
   employee: `0x${string}`;
   ratePerSecond: bigint;
@@ -114,16 +130,16 @@ export interface CancellationMeta {
  * sub-call of a poll never blanks that card (which caused cards to flicker in
  * and out every refetch tick).
  */
-export function useStreamsMeta(ids: readonly bigint[] | undefined) {
-  const idKey = (ids ?? []).map((i) => i.toString()).join(",");
+export function useStreamsMeta(ids: readonly PayrollRef[] | undefined) {
+  const idKey = (ids ?? []).map((i) => payrollRefKey(i)).join(",");
 
   const contracts = useMemo(
     () =>
       (ids ?? []).map((id) => ({
-        address: PAYROLL_ADDRESS,
+        address: id.payrollAddress,
         abi: PAYROLL_ABI,
         functionName: "streams" as const,
-        args: [id] as const,
+        args: [id.id] as const,
       })),
     // idKey captures the actual ids; ids identity churns on every poll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -147,7 +163,7 @@ export function useStreamsMeta(ids: readonly bigint[] | undefined) {
     const data = query.data ?? [];
     return list
       .map((id, i) => {
-        const key = id.toString();
+        const key = payrollRefKey(id);
         const res = data[i];
         if (res && res.status === "success" && res.result) {
           const [employer, employee, ratePerSecond, startTime, lastClaimTime, deposit, totalDeposited, withdrawn, active, invoiceRef] =
@@ -164,7 +180,8 @@ export function useStreamsMeta(ids: readonly bigint[] | undefined) {
               string
             ];
           const meta: StreamMeta = {
-            id,
+            id: id.id,
+            payrollAddress: id.payrollAddress,
             employer,
             employee,
             ratePerSecond,
@@ -191,15 +208,18 @@ export function useStreamsMeta(ids: readonly bigint[] | undefined) {
 }
 
 /** Read the immutable deliverables text for a stream list in one multicall. */
-export function useDeliverablesMeta(ids: readonly bigint[] | undefined) {
-  const idKey = (ids ?? []).map((i) => i.toString()).join(",");
+export function useDeliverablesMeta(ids: readonly PayrollRef[] | undefined) {
+  const idKey = (ids ?? []).map((i) => payrollRefKey(i)).join(",");
+  const activeIds = (ids ?? []).filter(
+    (id) => id.payrollAddress.toLowerCase() === PAYROLL_ADDRESS.toLowerCase()
+  );
   const contracts = useMemo(
     () =>
-      (ids ?? []).map((id) => ({
-        address: PAYROLL_ADDRESS,
+      activeIds.map((id) => ({
+        address: id.payrollAddress,
         abi: PAYROLL_ABI,
         functionName: "deliverables" as const,
-        args: [id] as const,
+        args: [id.id] as const,
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [idKey]
@@ -216,41 +236,45 @@ export function useDeliverablesMeta(ids: readonly bigint[] | undefined) {
   const deliverables = useMemo<Record<string, string>>(() => {
     const list = ids ?? [];
     const data = query.data ?? [];
-    return list.reduce<Record<string, string>>((out, id, i) => {
-      const result = data[i];
+    return list.reduce<Record<string, string>>((out, id) => {
+      const activeIndex = activeIds.findIndex((activeId) => payrollRefKey(activeId) === payrollRefKey(id));
+      const result = activeIndex >= 0 ? data[activeIndex] : undefined;
       if (result?.status === "success" && typeof result.result === "string") {
-        cache.current.set(id.toString(), result.result);
+        cache.current.set(payrollRefKey(id), result.result);
       }
-      out[id.toString()] = cache.current.get(id.toString()) ?? "";
+      out[payrollRefKey(id)] = cache.current.get(payrollRefKey(id)) ?? "";
       return out;
     }, {});
-  }, [query.data, idKey]);
+  }, [query.data, idKey, activeIds]);
   return { deliverables, isLoading: query.isLoading, refetch: query.refetch };
 }
 
 /** Read the latest cancellation record alongside a wallet's stream list. */
-export function useCancellationsMeta(ids: readonly bigint[] | undefined) {
-  const idKey = (ids ?? []).map((i) => i.toString()).join(",");
+export function useCancellationsMeta(ids: readonly PayrollRef[] | undefined) {
+  const idKey = (ids ?? []).map((i) => payrollRefKey(i)).join(",");
+  const activeIds = (ids ?? []).filter(
+    (id) => id.payrollAddress.toLowerCase() === PAYROLL_ADDRESS.toLowerCase()
+  );
   const contracts = useMemo(
     () =>
-      (ids ?? []).flatMap((id) => [
+      activeIds.flatMap((ref) => [
         {
-          address: PAYROLL_ADDRESS,
+          address: ref.payrollAddress,
           abi: PAYROLL_ABI,
           functionName: "cancellations" as const,
-          args: [id] as const,
+          args: [ref.id] as const,
         },
         {
-          address: PAYROLL_ADDRESS,
+          address: ref.payrollAddress,
           abi: PAYROLL_ABI,
           functionName: "cancellationCaseId" as const,
-          args: [id] as const,
+          args: [ref.id] as const,
         },
         {
-          address: PAYROLL_ADDRESS,
+          address: ref.payrollAddress,
           abi: PAYROLL_ABI,
           functionName: "bantDeadline" as const,
-          args: [id] as const,
+          args: [ref.id] as const,
         },
       ]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -268,10 +292,12 @@ export function useCancellationsMeta(ids: readonly bigint[] | undefined) {
   const cancellations = useMemo(() => {
     const list = ids ?? [];
     const data = query.data ?? [];
-    return list.reduce<Record<string, CancellationMeta>>((out, id, i) => {
-      const result = data[i * 3];
-      const caseIdResult = data[i * 3 + 1];
-      const bantDeadlineResult = data[i * 3 + 2];
+    return list.reduce<Record<string, CancellationMeta>>((out, ref) => {
+      const activeIndex = activeIds.findIndex((activeId) => payrollRefKey(activeId) === payrollRefKey(ref));
+      if (activeIndex < 0) return out;
+      const result = data[activeIndex * 3];
+      const caseIdResult = data[activeIndex * 3 + 1];
+      const bantDeadlineResult = data[activeIndex * 3 + 2];
       if (result?.status === "success" && result.result) {
         const [
           nonce,
@@ -318,35 +344,65 @@ export function useCancellationsMeta(ids: readonly bigint[] | undefined) {
           evidenceUri,
           bantDeadline,
         };
-        cache.current.set(id.toString(), meta);
+        cache.current.set(payrollRefKey(ref), meta);
       }
-      const cached = cache.current.get(id.toString());
-      if (cached) out[id.toString()] = cached;
+      const cached = cache.current.get(payrollRefKey(ref));
+      if (cached) out[payrollRefKey(ref)] = cached;
       return out;
     }, {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.data, idKey]);
+  }, [query.data, idKey, activeIds]);
   return { cancellations, isLoading: query.isLoading, refetch: query.refetch };
 }
 
 export function useEmployerStreams(employer: `0x${string}` | undefined) {
-  return useReadContract({
-    address: PAYROLL_ADDRESS,
-    abi: PAYROLL_ABI,
-    functionName: "getEmployerStreams",
-    args: employer ? [employer] : undefined,
+  const contracts = useMemo(
+    () =>
+      PAYROLL_ADDRESSES.map((payrollAddress) => ({
+        address: payrollAddress,
+        abi: PAYROLL_ABI,
+        functionName: "getEmployerStreams" as const,
+        args: employer ? [employer] as const : undefined,
+      })),
+    [employer]
+  );
+  const query = useReadContracts({
+    contracts,
     query: { enabled: !!employer, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
+  return {
+    ...query,
+    data: (query.data ?? []).flatMap((result, i) =>
+      result.status === "success" && Array.isArray(result.result)
+        ? (result.result as bigint[]).map((id) => ({ id, payrollAddress: PAYROLL_ADDRESSES[i] }))
+        : []
+    ),
+  };
 }
 
 export function useEmployeeStreams(employee: `0x${string}` | undefined) {
-  return useReadContract({
-    address: PAYROLL_ADDRESS,
-    abi: PAYROLL_ABI,
-    functionName: "getEmployeeStreams",
-    args: employee ? [employee] : undefined,
+  const contracts = useMemo(
+    () =>
+      PAYROLL_ADDRESSES.map((payrollAddress) => ({
+        address: payrollAddress,
+        abi: PAYROLL_ABI,
+        functionName: "getEmployeeStreams" as const,
+        args: employee ? [employee] as const : undefined,
+      })),
+    [employee]
+  );
+  const query = useReadContracts({
+    contracts,
     query: { enabled: !!employee, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
+  return {
+    ...query,
+    data: (query.data ?? []).flatMap((result, i) =>
+      result.status === "success" && Array.isArray(result.result)
+        ? (result.result as bigint[]).map((id) => ({ id, payrollAddress: PAYROLL_ADDRESSES[i] }))
+        : []
+    ),
+  };
 }
 
 export function useUsdcBalance(address: `0x${string}` | undefined) {
@@ -359,12 +415,15 @@ export function useUsdcBalance(address: `0x${string}` | undefined) {
   });
 }
 
-export function useUsdcAllowance(owner: `0x${string}` | undefined) {
+export function useUsdcAllowance(
+  owner: `0x${string}` | undefined,
+  payrollAddress: `0x${string}` = PAYROLL_ADDRESS
+) {
   return useReadContract({
     address: USDC_ADDRESS,
     abi: ERC20_ABI,
     functionName: "allowance",
-    args: owner ? [owner, PAYROLL_ADDRESS] : undefined,
+    args: owner ? [owner, payrollAddress] : undefined,
     query: { enabled: !!owner, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
 }
@@ -376,8 +435,8 @@ export function useWithdraw() {
   return {
     // Async-returning so the caller can await the hash, confirm the receipt, and
     // only then fire the "you cashed out" email (never on a rejected tx).
-    withdraw: async (streamId: bigint) => {
-      return writeContractAsync({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "withdraw", args: [streamId], gas: GAS_LIMITS.withdraw, ...ARC_FEE });
+    withdraw: async (streamId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) => {
+      return writeContractAsync({ address: payrollAddress, abi: PAYROLL_ABI, functionName: "withdraw", args: [streamId], gas: GAS_LIMITS.withdraw, ...ARC_FEE });
     },
     isPending,
     isConfirming,
@@ -394,8 +453,8 @@ export function useTopUp() {
   return {
     // Async-returning so the caller can await the hash, confirm the receipt, read
     // the (possibly raised) new rate back, and then fire the top-up email.
-    topUp: async (streamId: bigint, amount: bigint) => {
-      return writeContractAsync({ address: PAYROLL_ADDRESS, abi: PAYROLL_ABI, functionName: "topUp", args: [streamId, amount], gas: GAS_LIMITS.topUp, ...ARC_FEE });
+    topUp: async (streamId: bigint, amount: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) => {
+      return writeContractAsync({ address: payrollAddress, abi: PAYROLL_ABI, functionName: "topUp", args: [streamId, amount], gas: GAS_LIMITS.topUp, ...ARC_FEE });
     },
     isPending,
     isConfirming,
@@ -413,9 +472,9 @@ export function useCancelStream() {
     // Async so the caller can freeze the card the instant the tx is submitted
     // and refetch once it confirms, instead of the stream ticking on until the
     // next background poll happens to catch the state change.
-    cancel: async (streamId: bigint, reason: string) => {
+    cancel: async (streamId: bigint, reason: string, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) => {
       return writeContractAsync({
-        address: PAYROLL_ADDRESS,
+        address: payrollAddress,
         abi: PAYROLL_ABI,
         functionName: "requestCancellation",
         args: [streamId, reason],
@@ -438,10 +497,11 @@ export function useAppealCancellation() {
     appeal: async (
       streamId: bigint,
       evidenceUri: string,
-      evidenceHash: `0x${string}`
+      evidenceHash: `0x${string}`,
+      payrollAddress: `0x${string}` = PAYROLL_ADDRESS
     ) =>
       writeContractAsync({
-        address: PAYROLL_ADDRESS,
+        address: payrollAddress,
         abi: PAYROLL_ABI,
         functionName: "appealCancellation",
         args: [streamId, evidenceUri, evidenceHash],
@@ -459,18 +519,18 @@ export function useAppealCancellation() {
 export function useFinalizeCancellation() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const finalizeUnappealed = (streamId: bigint) =>
+  const finalizeUnappealed = (streamId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) =>
     writeContractAsync({
-      address: PAYROLL_ADDRESS,
+      address: payrollAddress,
       abi: PAYROLL_ABI,
       functionName: "finalizeUnappealedCancellation",
       args: [streamId],
       gas: GAS_LIMITS.finalizeCancellation,
       ...ARC_FEE,
     });
-  const finalizeTimedOut = (streamId: bigint) =>
+  const finalizeTimedOut = (streamId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) =>
     writeContractAsync({
-      address: PAYROLL_ADDRESS,
+      address: payrollAddress,
       abi: PAYROLL_ABI,
       functionName: "finalizeTimedOutAppeal",
       args: [streamId],
@@ -525,12 +585,12 @@ export function useApproveUsdc() {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   return {
-    approve: async (amount: bigint) => {
+    approve: async (amount: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) => {
       return writeContractAsync({
         address: USDC_ADDRESS,
         abi: ERC20_ABI,
         functionName: "approve",
-        args: [PAYROLL_ADDRESS, amount],
+        args: [payrollAddress, amount],
         gas: GAS_LIMITS.approve,
         ...ARC_FEE,
       });
@@ -656,6 +716,7 @@ export type ReqStatusValue = (typeof ReqStatus)[keyof typeof ReqStatus];
 /** Decoded shape of a `requests(id)` tuple, keyed for readability. */
 export interface RequestMeta {
   id: bigint;
+  payrollAddress: `0x${string}`;
   payee: `0x${string}`;
   payer: `0x${string}`;
   ratePerSecond: bigint;
@@ -672,16 +733,16 @@ export interface RequestMeta {
  * stable query key, kept previous data, and a per-id last-good cache so a flaky
  * poll never blanks a request card.
  */
-export function useRequestsMeta(ids: readonly bigint[] | undefined) {
-  const idKey = (ids ?? []).map((i) => i.toString()).join(",");
+export function useRequestsMeta(ids: readonly PayrollRef[] | undefined) {
+  const idKey = (ids ?? []).map((i) => payrollRefKey(i)).join(",");
 
   const contracts = useMemo(
     () =>
-      (ids ?? []).map((id) => ({
-        address: PAYROLL_ADDRESS,
+      (ids ?? []).map((ref) => ({
+        address: ref.payrollAddress,
         abi: PAYROLL_ABI,
         functionName: "requests" as const,
-        args: [id] as const,
+        args: [ref.id] as const,
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [idKey]
@@ -702,8 +763,8 @@ export function useRequestsMeta(ids: readonly bigint[] | undefined) {
     const list = ids ?? [];
     const data = query.data ?? [];
     return list
-      .map((id, i) => {
-        const key = id.toString();
+      .map((ref, i) => {
+        const key = payrollRefKey(ref);
         const res = data[i];
         if (res && res.status === "success" && res.result) {
           const [payee, payer, ratePerSecond, deposit, startAt, counterDeadline, status, invoiceRef, streamId] =
@@ -719,7 +780,8 @@ export function useRequestsMeta(ids: readonly bigint[] | undefined) {
               bigint
             ];
           const meta: RequestMeta = {
-            id,
+            id: ref.id,
+            payrollAddress: ref.payrollAddress,
             payee,
             payer,
             ratePerSecond,
@@ -744,24 +806,54 @@ export function useRequestsMeta(ids: readonly bigint[] | undefined) {
 
 /** Request IDs addressed to a payer (incoming, to accept/counter/reject). */
 export function usePayerRequests(payer: `0x${string}` | undefined) {
-  return useReadContract({
-    address: PAYROLL_ADDRESS,
-    abi: PAYROLL_ABI,
-    functionName: "getPayerRequests",
-    args: payer ? [payer] : undefined,
+  const contracts = useMemo(
+    () =>
+      PAYROLL_ADDRESSES.map((payrollAddress) => ({
+        address: payrollAddress,
+        abi: PAYROLL_ABI,
+        functionName: "getPayerRequests" as const,
+        args: payer ? [payer] as const : undefined,
+      })),
+    [payer]
+  );
+  const query = useReadContracts({
+    contracts,
     query: { enabled: !!payer, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
+  return {
+    ...query,
+    data: (query.data ?? []).flatMap((result, i) =>
+      result.status === "success" && Array.isArray(result.result)
+        ? (result.result as bigint[]).map((id) => ({ id, payrollAddress: PAYROLL_ADDRESSES[i] }))
+        : []
+    ),
+  };
 }
 
 /** Request IDs a payee created (outgoing, to cancel / await response). */
 export function usePayeeRequests(payee: `0x${string}` | undefined) {
-  return useReadContract({
-    address: PAYROLL_ADDRESS,
-    abi: PAYROLL_ABI,
-    functionName: "getPayeeRequests",
-    args: payee ? [payee] : undefined,
+  const contracts = useMemo(
+    () =>
+      PAYROLL_ADDRESSES.map((payrollAddress) => ({
+        address: payrollAddress,
+        abi: PAYROLL_ABI,
+        functionName: "getPayeeRequests" as const,
+        args: payee ? [payee] as const : undefined,
+      })),
+    [payee]
+  );
+  const query = useReadContracts({
+    contracts,
     query: { enabled: !!payee, refetchInterval: 5000, placeholderData: keepPreviousData },
   });
+  return {
+    ...query,
+    data: (query.data ?? []).flatMap((result, i) =>
+      result.status === "success" && Array.isArray(result.result)
+        ? (result.result as bigint[]).map((id) => ({ id, payrollAddress: PAYROLL_ADDRESSES[i] }))
+        : []
+    ),
+  };
 }
 
 /**
@@ -775,10 +867,14 @@ export function useRequestActions() {
   const { writeContractAsync, data: hash, isPending, error, reset } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  const call = async (functionName: string, args: readonly unknown[]) => {
+  const call = async (
+    functionName: string,
+    args: readonly unknown[],
+    payrollAddress: `0x${string}` = PAYROLL_ADDRESS
+  ) => {
     const gas = GAS_LIMITS[functionName as keyof typeof GAS_LIMITS];
     return writeContractAsync({
-      address: PAYROLL_ADDRESS,
+      address: payrollAddress,
       abi: PAYROLL_ABI,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       functionName: functionName as any,
@@ -796,23 +892,35 @@ export function useRequestActions() {
       ratePerSecond: bigint,
       deposit: bigint,
       invoiceRef: string,
-      startAt: bigint = 0n
-    ) => call("requestStream", [payer, ratePerSecond, deposit, invoiceRef, startAt]),
+      startAt: bigint = 0n,
+      payrollAddress: `0x${string}` = PAYROLL_ADDRESS
+    ) => call("requestStream", [payer, ratePerSecond, deposit, invoiceRef, startAt], payrollAddress),
     /** Payer accepts a pending request as-is (requires prior USDC approval). */
-    acceptRequest: (requestId: bigint) => call("acceptRequest", [requestId]),
+    acceptRequest: (requestId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) =>
+      call("acceptRequest", [requestId], payrollAddress),
     /** Payer counters with new terms, escrowing the new deposit (needs approval). */
-    counterRequest: (requestId: bigint, newRate: bigint, newDeposit: bigint, newStartAt: bigint = 0n) =>
-      call("counterRequest", [requestId, newRate, newDeposit, newStartAt]),
+    counterRequest: (
+      requestId: bigint,
+      newRate: bigint,
+      newDeposit: bigint,
+      newStartAt: bigint = 0n,
+      payrollAddress: `0x${string}` = PAYROLL_ADDRESS
+    ) => call("counterRequest", [requestId, newRate, newDeposit, newStartAt], payrollAddress),
     /** Payee accepts the payer's counter — starts the stream instantly. */
-    acceptCounter: (requestId: bigint) => call("acceptCounter", [requestId]),
+    acceptCounter: (requestId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) =>
+      call("acceptCounter", [requestId], payrollAddress),
     /** Payee rejects the counter; escrow refunds to the payer. */
-    rejectCounter: (requestId: bigint) => call("rejectCounter", [requestId]),
+    rejectCounter: (requestId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) =>
+      call("rejectCounter", [requestId], payrollAddress),
     /** Anyone settles an expired counter, refunding the payer's escrow. */
-    reclaimExpiredCounter: (requestId: bigint) => call("reclaimExpiredCounter", [requestId]),
+    reclaimExpiredCounter: (requestId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) =>
+      call("reclaimExpiredCounter", [requestId], payrollAddress),
     /** Payer declines a pending request. No funds were moved. */
-    rejectRequest: (requestId: bigint) => call("rejectRequest", [requestId]),
+    rejectRequest: (requestId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) =>
+      call("rejectRequest", [requestId], payrollAddress),
     /** Payee cancels their own pending request. */
-    cancelRequest: (requestId: bigint) => call("cancelRequest", [requestId]),
+    cancelRequest: (requestId: bigint, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) =>
+      call("cancelRequest", [requestId], payrollAddress),
     isPending,
     isConfirming,
     isSuccess,

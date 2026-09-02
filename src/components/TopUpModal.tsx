@@ -31,7 +31,7 @@ export function TopUpModal({ stream, onClose }: Props) {
   const [txError, setTxError] = useState<string | null>(null);
 
   const { data: balance } = useUsdcBalance(address);
-  const { data: allowance } = useUsdcAllowance(address);
+  const { data: allowance } = useUsdcAllowance(address, stream.payrollAddress);
   const { approve } = useApproveUsdc();
   const { topUp } = useTopUp();
 
@@ -62,11 +62,11 @@ export function TopUpModal({ stream, onClose }: Props) {
     try {
       if (needsApproval) {
         setTxStatus("approving");
-        const approvalHash = await approve(depositAmount);
+        const approvalHash = await approve(depositAmount, stream.payrollAddress);
         await waitForSuccessfulReceipt(config, approvalHash);
       }
       setTxStatus("topping-up");
-      const hash = await topUp(streamId, depositAmount);
+      const hash = await topUp(streamId, depositAmount, stream.payrollAddress);
 
       // Notify both sides once the top-up confirms. We read the rate back so the
       // email can announce a raised rate on a live stream.
@@ -78,7 +78,7 @@ export function TopUpModal({ stream, onClose }: Props) {
       let newRate: bigint | null = null;
       try {
         const tuple = await publicClient?.readContract({
-          address: PAYROLL_ADDRESS,
+          address: stream.payrollAddress,
           abi: PAYROLL_ABI,
           functionName: "streams",
           args: [streamId],

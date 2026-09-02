@@ -189,7 +189,13 @@ export function RequestStreamModal({ onClose, onSuccess }: Props) {
     setTxError(null);
     setSubmitting(true);
     try {
-      const requestHash = await requestStream(recipient, ratePerSecond, depositAmount, invoiceRef, startAt);
+      const requestHash = await requestStream(
+        recipient,
+        ratePerSecond,
+        depositAmount,
+        invoiceRef,
+        startAt
+      );
       await waitForSuccessfulReceipt(config, requestHash);
       // The caller is the payee asking; notify the payer they have a request.
       await notify("request_received", {

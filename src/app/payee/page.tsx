@@ -28,6 +28,7 @@ import {
   usePayeeRequests,
   useRequestsMeta,
   ReqStatus,
+  payrollRefKey,
 } from "@/hooks/usePayroll";
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
 import { useNotify } from "@/hooks/useNotify";
@@ -56,7 +57,7 @@ export default function EmployeePage() {
   const { deliverables } = useDeliverablesMeta(ordered);
   const { cancellations } = useCancellationsMeta(ordered);
   const displayStreams = useMemo(
-    () => streams.map((stream) => ({ ...stream, deliverables: deliverables[stream.id.toString()] ?? "" })),
+    () => streams.map((stream) => ({ ...stream, deliverables: deliverables[payrollRefKey(stream)] ?? "" })),
     [streams, deliverables]
   );
   const loadingStreams = loadingIds || (ordered.length > 0 && loadingMeta && streams.length === 0);
@@ -65,11 +66,11 @@ export default function EmployeePage() {
   // snapshotted before the withdraw zeroes it, so the email reports what was
   // actually taken. A rejected/failed tx fires no email.
   const handleWithdraw = useCallback(
-    async (id: bigint) => {
-      const stream = streams.find((s) => s.id === id);
+    async (ref: { id: bigint; payrollAddress: `0x${string}` }) => {
+      const stream = streams.find((s) => payrollRefKey(s) === payrollRefKey(ref));
       const unclaimed = stream ? streamMath(stream).unclaimed : 0n;
       try {
-        const hash = await withdraw(id);
+        const hash = await withdraw(ref.id, ref.payrollAddress);
         await waitForSuccessfulReceipt(config, hash);
         await refetch();
         if (stream && unclaimed > 0n) {
@@ -213,13 +214,13 @@ export default function EmployeePage() {
             perspective="employee"
             loading={loadingStreams}
             cancellations={cancellations}
-            onAppeal={(id) => {
-              const stream = displayStreams.find((item) => item.id === id);
-              const cancellation = cancellations[id.toString()];
+            onAppeal={(ref) => {
+              const stream = displayStreams.find((item) => payrollRefKey(item) === payrollRefKey(ref));
+              const cancellation = cancellations[payrollRefKey(ref)];
               if (stream && cancellation) setAppealStream({ stream, cancellation });
             }}
-            onOpenBant={(id) => {
-              const caseId = cancellations[id.toString()]?.caseId;
+            onOpenBant={(ref) => {
+              const caseId = cancellations[payrollRefKey(ref)]?.caseId;
               if (caseId && !/^0x0+$/.test(caseId)) setBantCaseId(caseId);
             }}
             onWithdraw={handleWithdraw}

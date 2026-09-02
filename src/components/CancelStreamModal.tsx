@@ -5,6 +5,7 @@ import { useConfig } from "wagmi";
 import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { useCancelStream } from "@/hooks/usePayroll";
 import type { StreamMeta } from "@/hooks/usePayroll";
+import { LEGACY_PAYROLL_ADDRESS } from "@/lib/contracts";
 import { formatUsdc } from "@/lib/utils";
 import { Modal } from "./Modal";
 
@@ -23,10 +24,11 @@ export function CancelStreamModal({ stream, onClose, onSubmitted }: Props) {
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const legacy = stream.payrollAddress.toLowerCase() === LEGACY_PAYROLL_ADDRESS.toLowerCase();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (reason.trim().length < 20) return;
+    if (!legacy && reason.trim().length < 20) return;
     setError(null);
       setPending(true);
     try {
@@ -41,14 +43,24 @@ export function CancelStreamModal({ stream, onClose, onSubmitted }: Props) {
   }
 
   return (
-    <Modal title={`Request cancellation for #${stream.id.toString()}`} onClose={onClose} closeDisabled={pending}>
+    <Modal title={`${legacy ? "Cancel" : "Request cancellation"} for #${stream.id.toString()}`} onClose={onClose} closeDisabled={pending}>
       <form onSubmit={submit} className="space-y-4">
         <div className="border-b border-ink/10 pb-4 text-sm text-ink/65">
-          The payee keeps everything already earned. The remaining{" "}
-          <span className="font-mono text-ink">${formatUsdc(stream.deposit)}</span>{" "}
-          stays escrowed for 24 hours so they can appeal.
+          {legacy ? (
+            <>
+              This stream predates Bant appeals. The payee keeps everything already earned and
+              the remaining <span className="font-mono text-ink">${formatUsdc(stream.deposit)}</span>{" "}
+              is refunded immediately.
+            </>
+          ) : (
+            <>
+              The payee keeps everything already earned. The remaining{" "}
+              <span className="font-mono text-ink">${formatUsdc(stream.deposit)}</span>{" "}
+              stays escrowed for 24 hours so they can appeal.
+            </>
+          )}
         </div>
-        <div>
+        {!legacy && <div>
           <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink/50">
             Why are you cancelling?
           </label>
@@ -63,14 +75,14 @@ export function CancelStreamModal({ stream, onClose, onSubmitted }: Props) {
             required
           />
           <p className="mt-1.5 text-xs text-ink/40">{reason.length}/1000</p>
-        </div>
+        </div>}
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button
           type="submit"
-          disabled={pending || reason.trim().length < 20}
+          disabled={pending || (!legacy && reason.trim().length < 20)}
           className="w-full rounded-full bg-red-500 py-3 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {pending ? "Confirming cancellation…" : "Request cancellation"}
+          {pending ? "Confirming cancellation…" : legacy ? "Cancel stream" : "Request cancellation"}
         </button>
       </form>
     </Modal>

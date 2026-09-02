@@ -31,6 +31,7 @@ import {
 import { useBalancePrivacy } from "@/hooks/useBalancePrivacy";
 import { formatUsdc } from "@/lib/utils";
 import type { StreamMeta } from "@/hooks/usePayroll";
+import { streamMath } from "@/lib/stream-math";
 
 export default function EmployerPage() {
   const { address, connected, restoring } = useActiveAddress();
@@ -65,17 +66,20 @@ export default function EmployerPage() {
   );
 
   const totalCount = ordered.length;
-  // "Ongoing" excludes scheduled streams (active on-chain but not yet flowing).
-  const { activeCount, scheduledCount } = useMemo(() => {
+  // "Ongoing" excludes scheduled and time-exhausted streams. The latter are
+  // active on-chain only because the payee still needs to claim the final chunk.
+  const { activeCount, scheduledCount, awaitingClaimCount } = useMemo(() => {
     const nowSec = Math.floor(Date.now() / 1000);
     let active = 0;
     let scheduled = 0;
+    let awaitingClaim = 0;
     for (const s of displayStreams) {
-      if (!s.active) continue;
-      if (Number(s.startTime) > nowSec) scheduled++;
-      else active++;
+      const { phase } = streamMath(s, nowSec);
+      if (phase === "scheduled") scheduled++;
+      else if (phase === "awaiting_claim") awaitingClaim++;
+      else if (phase === "live") active++;
     }
-    return { activeCount: active, scheduledCount: scheduled };
+    return { activeCount: active, scheduledCount: scheduled, awaitingClaimCount: awaitingClaim };
   }, [displayStreams]);
 
   if (!connected) {
@@ -160,7 +164,9 @@ export default function EmployerPage() {
               <p className="mt-1 text-xs text-panel-foreground/40">
                 {loadingStreams
                   ? ""
-                  : `${activeCount} ongoing${scheduledCount > 0 ? ` · ${scheduledCount} scheduled` : ""}`}
+                  : `${activeCount} ongoing${scheduledCount > 0 ? ` · ${scheduledCount} scheduled` : ""}${
+                      awaitingClaimCount > 0 ? ` · ${awaitingClaimCount} awaiting claim` : ""
+                    }`}
               </p>
             </div>
           </div>

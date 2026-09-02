@@ -11,7 +11,7 @@ import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import { streamMath } from "@/lib/stream-math";
 
-type Filter = "ongoing" | "scheduled" | "complete" | "all";
+type Filter = "ongoing" | "scheduled" | "awaiting_claim" | "complete" | "all";
 type Identity = { username: string | null; displayName: string | null };
 
 /** Cards per page — keeps every stream view to a compact, scannable 4-up grid. */
@@ -36,20 +36,23 @@ interface Props {
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "ongoing", label: "Ongoing" },
   { key: "scheduled", label: "Scheduled" },
+  { key: "awaiting_claim", label: "Awaiting claim" },
   { key: "complete", label: "Complete" },
   { key: "all", label: "All" },
 ];
 
 /**
  * Bucket a stream into exactly one filter tab from its lifecycle phase.
- * "ongoing" now covers both genuinely-streaming and awaiting-claim streams
- * (both are still on-chain `active`); "complete" is any settled/ended stream.
+ * Awaiting-claim streams are active on-chain, but time-exhausted and waiting
+ * for the payee's final withdrawal, so they get their own actionable tab.
+ * "complete" is any settled/ended stream.
  */
 function bucketOf(s: StreamMeta, nowSec: number): Exclude<Filter, "all"> {
   const { phase } = streamMath(s, nowSec);
   if (phase === "scheduled") return "scheduled";
+  if (phase === "awaiting_claim") return "awaiting_claim";
   if (phase === "claimed" || phase === "ended") return "complete";
-  return "ongoing"; // live or awaiting_claim
+  return "ongoing"; // live
 }
 
 /** Local end-of-day epoch (ms) for an inclusive "to" date bound. */
@@ -124,14 +127,16 @@ export function StreamCollection({
     const nowSec = Math.floor(Date.now() / 1000);
     let ongoing = 0;
     let scheduled = 0;
+    let awaiting_claim = 0;
     let complete = 0;
     for (const s of streams) {
       const bucket = bucketOf(s, nowSec);
       if (bucket === "scheduled") scheduled++;
+      else if (bucket === "awaiting_claim") awaiting_claim++;
       else if (bucket === "complete") complete++;
       else ongoing++;
     }
-    return { ongoing, scheduled, complete, all: streams.length };
+    return { ongoing, scheduled, awaiting_claim, complete, all: streams.length };
   }, [streams]);
 
   const hasDateFilter = fromDate !== "" || toDate !== "";
@@ -194,7 +199,7 @@ export function StreamCollection({
     <div className="mt-8">
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-full border border-ink/10 bg-paper-warm p-0.5 text-xs font-medium">
+        <div className="flex max-w-full overflow-x-auto rounded-full border border-ink/10 bg-paper-warm p-0.5 text-xs font-medium">
           {FILTERS.map((f) => (
             <button
               key={f.key}
@@ -321,6 +326,8 @@ export function StreamCollection({
               ? "No completed streams yet."
               : filter === "scheduled"
               ? "No scheduled streams right now."
+              : filter === "awaiting_claim"
+              ? "No streams are awaiting claim right now."
               : "No ongoing streams right now."}
           </p>
         </div>

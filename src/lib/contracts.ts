@@ -94,6 +94,13 @@ export const PAYROLL_ABI = [
   },
   {
     type: "function",
+    name: "cancelStream",
+    inputs: [{ name: "streamId", type: "uint256", internalType: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "requestCancellation",
     inputs: [
       { name: "streamId", type: "uint256", internalType: "uint256" },

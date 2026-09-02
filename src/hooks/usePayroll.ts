@@ -8,6 +8,7 @@ import {
   PAYROLL_ABI,
   PAYROLL_ADDRESS,
   PAYROLL_ADDRESSES,
+  LEGACY_PAYROLL_ADDRESS,
   USDC_ADDRESS,
   ERC20_ABI,
 } from "@/lib/contracts";
@@ -58,6 +59,7 @@ const ARC_FEE = {
 const GAS_LIMITS = {
   withdraw: 200_000n,
   topUp: 200_000n,
+  cancelStream: 300_000n,
   requestCancellation: 300_000n,
   appealCancellation: 250_000n,
   finalizeCancellation: 200_000n,
@@ -473,12 +475,13 @@ export function useCancelStream() {
     // and refetch once it confirms, instead of the stream ticking on until the
     // next background poll happens to catch the state change.
     cancel: async (streamId: bigint, reason: string, payrollAddress: `0x${string}` = PAYROLL_ADDRESS) => {
+      const isLegacy = payrollAddress.toLowerCase() === LEGACY_PAYROLL_ADDRESS.toLowerCase();
       return writeContractAsync({
         address: payrollAddress,
         abi: PAYROLL_ABI,
-        functionName: "requestCancellation",
-        args: [streamId, reason],
-        gas: GAS_LIMITS.requestCancellation,
+        functionName: isLegacy ? "cancelStream" : "requestCancellation",
+        args: isLegacy ? [streamId] : [streamId, reason],
+        gas: isLegacy ? GAS_LIMITS.cancelStream : GAS_LIMITS.requestCancellation,
         ...ARC_FEE,
       });
     },

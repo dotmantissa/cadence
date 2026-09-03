@@ -1,7 +1,7 @@
 import "server-only";
 
 import { NextResponse } from "next/server";
-import { verifyCaller } from "@/lib/privy-server";
+import { verifyCaller, type Caller } from "@/lib/privy-server";
 import { upsertUser, EmailBoundElsewhereError } from "@/db/queries";
 import type { User } from "@/db/schema";
 
@@ -9,13 +9,13 @@ import type { User } from "@/db/schema";
  * Authenticate a request and resolve it to our internal user row, creating or
  * syncing that row on the way through. Every protected route starts here.
  *
- * Returns either `{ user }` or a ready-to-send 401 `response`. Split this way so
- * handlers can `if ("response" in gate) return gate.response;` and then use the
- * user with no further null checks.
+ * Returns either `{ user, caller }` or a ready-to-send 401 `response`. Split
+ * this way so handlers can `if ("response" in gate) return gate.response;`
+ * and then use the authenticated identity with no further null checks.
  */
 export async function requireUser(
   req: Request
-): Promise<{ user: User } | { response: NextResponse }> {
+): Promise<{ user: User; caller: Caller } | { response: NextResponse }> {
   const caller = await verifyCaller(req);
   if (!caller) {
     return {
@@ -24,7 +24,7 @@ export async function requireUser(
   }
   try {
     const user = await upsertUser(caller);
-    return { user };
+    return { user, caller };
   } catch (e) {
     // The login email belongs to someone else's account (they bound it for
     // notifications). Refuse with a code the client turns into "sign in with

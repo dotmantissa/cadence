@@ -19,7 +19,24 @@ export interface Caller {
   /** Privy DID, e.g. did:privy:... */
   privyId: string;
   email: string | null;
+  /** Privy's most recently linked wallet, retained for existing user/profile behavior. */
   walletAddress: string | null;
+  /** Every verified EVM wallet linked to this Privy user. */
+  walletAddresses: string[];
+}
+
+function linkedWalletAddresses(user: Awaited<ReturnType<typeof privy.getUser>>): string[] {
+  const addresses = user.linkedAccounts
+    .filter(
+      (account): account is typeof account & { address: string } =>
+        (account.type === "wallet" || account.type === "smart_wallet") &&
+        typeof account.address === "string"
+    )
+    .map((account) => account.address.toLowerCase());
+
+  if (user.wallet?.address) addresses.push(user.wallet.address.toLowerCase());
+  if (user.smartWallet?.address) addresses.push(user.smartWallet.address.toLowerCase());
+  return [...new Set(addresses)];
 }
 
 /**
@@ -46,12 +63,14 @@ export async function verifyCaller(req: Request): Promise<Caller | null> {
   // lookup fails we still know who they are from the verified token.
   try {
     const user = await privy.getUser(userId);
+    const walletAddresses = linkedWalletAddresses(user);
     return {
       privyId: userId,
       email: user.email?.address ?? null,
       walletAddress: user.wallet?.address ?? null,
+      walletAddresses,
     };
   } catch {
-    return { privyId: userId, email: null, walletAddress: null };
+    return { privyId: userId, email: null, walletAddress: null, walletAddresses: [] };
   }
 }

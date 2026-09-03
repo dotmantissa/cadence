@@ -9,6 +9,7 @@ import {
 } from "@/db/queries";
 import { readArcStreamAppeal } from "@/lib/arc-server";
 import { APPEAL_SOURCE_TYPES, type AppealSourceType } from "@/lib/appeals";
+import { hasVerifiedWallet } from "@/lib/auth-wallet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,8 +57,10 @@ async function authorized(req: Request, caseId: string) {
   if ("response" in gate) return { response: gate.response } as const;
   const appeal = await getCancellationAppeal(caseId);
   if (!appeal) return { response: NextResponse.json({ error: "not found" }, { status: 404 }) } as const;
-  const wallet = gate.user.walletAddress?.toLowerCase();
-  if (!wallet || ![appeal.payerAddress, appeal.payeeAddress].includes(wallet)) {
+  const wallet = [appeal.payerAddress, appeal.payeeAddress].find((address) =>
+    hasVerifiedWallet(gate.caller.walletAddresses, address)
+  );
+  if (!wallet) {
     return { response: NextResponse.json({ error: "forbidden" }, { status: 403 }) } as const;
   }
   return { user: gate.user, appeal, wallet } as const;

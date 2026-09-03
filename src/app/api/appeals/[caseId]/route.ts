@@ -18,6 +18,7 @@ import {
   isGenLayerConfigured,
   readGenLayerCase,
 } from "@/lib/genlayer-server";
+import { hasVerifiedWallet } from "@/lib/auth-wallet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,8 +45,11 @@ async function authorizedCase(req: Request, caseId: string) {
   if ("response" in gate) return { response: gate.response } as const;
   const row = await getCancellationAppeal(caseId);
   if (!row) return { response: NextResponse.json({ error: "not found" }, { status: 404 }) } as const;
-  const wallet = gate.user.walletAddress?.toLowerCase();
-  if (!wallet || ![row.payerAddress, row.payeeAddress].includes(wallet)) {
+  if (
+    ![row.payerAddress, row.payeeAddress].some((address) =>
+      hasVerifiedWallet(gate.caller.walletAddresses, address)
+    )
+  ) {
     return { response: NextResponse.json({ error: "forbidden" }, { status: 403 }) } as const;
   }
   return { user: gate.user, row } as const;

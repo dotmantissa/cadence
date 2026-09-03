@@ -4,6 +4,7 @@ import { requireUser, badRequest } from "../_auth";
 import { prepareCancellationAppeal } from "@/db/queries";
 import { readArcStreamAppeal } from "@/lib/arc-server";
 import { APPEAL_SOURCE_TYPES, type AppealSourceType } from "@/lib/appeals";
+import { hasVerifiedWallet } from "@/lib/auth-wallet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -99,8 +100,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "could not read the Arc cancellation" }, { status: 502 });
   }
-  const wallet = gate.user.walletAddress?.toLowerCase();
-  if (!wallet || wallet !== arc.employee.toLowerCase()) {
+  if (!hasVerifiedWallet(gate.caller.walletAddresses, arc.employee)) {
     return NextResponse.json({ error: "only the payee can file this appeal" }, { status: 403 });
   }
   if (arc.cancellation.status !== 1) {

@@ -171,6 +171,8 @@ export function useApi() {
         room: {
           caseId: string;
           streamId: string;
+          payerAddress: string;
+          payeeAddress: string;
           opensAt: string;
           closesAt: string;
           status: "open" | "closed";

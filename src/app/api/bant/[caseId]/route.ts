@@ -81,6 +81,8 @@ export async function GET(
     room: {
       caseId: room.caseId,
       streamId: room.streamId,
+      payerAddress: room.payerAddress,
+      payeeAddress: room.payeeAddress,
       opensAt: room.opensAt,
       closesAt: room.closesAt,
       status: room.status,

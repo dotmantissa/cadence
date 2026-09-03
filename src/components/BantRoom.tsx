@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MessageSquare, Paperclip, Send, Loader2 } from "lucide-react";
 import { useApi } from "@/hooks/useApi";
+import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { APPEAL_SOURCE_TYPES, type AppealSourceType } from "@/lib/appeals";
 import { Modal } from "./Modal";
 
@@ -15,6 +16,11 @@ type Message = {
   evidenceDescription: string | null;
   evidenceHash: string | null;
   createdAt: string;
+};
+
+type RoomParticipants = {
+  payerAddress: string;
+  payeeAddress: string;
 };
 
 interface Props {
@@ -37,7 +43,9 @@ function remainingLabel(closesAt: string | null, now: number): string {
 
 export function BantRoom({ caseId, onClose, onCompleted }: Props) {
   const { api } = useApi();
+  const { address: activeAddress } = useActiveAddress();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [participants, setParticipants] = useState<RoomParticipants | null>(null);
   const [closesAt, setClosesAt] = useState<string | null>(null);
   const [roomStatus, setRoomStatus] = useState<"loading" | "open" | "closed">("loading");
   const [body, setBody] = useState("");
@@ -52,6 +60,14 @@ export function BantRoom({ caseId, onClose, onCompleted }: Props) {
     try {
       const result = await api.getBantRoom(caseId);
       setMessages(result.messages);
+      setParticipants(
+        result.room
+          ? {
+              payerAddress: result.room.payerAddress,
+              payeeAddress: result.room.payeeAddress,
+            }
+          : null
+      );
       setClosesAt(result.room?.closesAt ?? null);
       setRoomStatus(result.room ? result.room.status : "loading");
       if (result.room?.status === "closed") onCompleted?.();
@@ -76,6 +92,13 @@ export function BantRoom({ caseId, onClose, onCompleted }: Props) {
     [closesAt, now]
   );
   const closed = roomStatus === "closed" || closedByClock;
+
+  function messageRole(authorAddress: string): "payer" | "payee" | "participant" {
+    const author = authorAddress.toLowerCase();
+    if (participants?.payerAddress.toLowerCase() === author) return "payer";
+    if (participants?.payeeAddress.toLowerCase() === author) return "payee";
+    return "participant";
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -121,29 +144,56 @@ export function BantRoom({ caseId, onClose, onCompleted }: Props) {
           {messages.length === 0 ? (
             <p className="py-8 text-center text-sm text-ink/45">No evidence messages yet.</p>
           ) : (
-            messages.map((message) => (
-              <article key={message.id} className="border border-ink/10 bg-paper-warm p-3">
-                <div className="flex items-center justify-between gap-3 text-[11px] text-ink/40">
-                  <span className="font-mono">{message.authorAddress.slice(0, 8)}…{message.authorAddress.slice(-6)}</span>
-                  <time>{new Date(message.createdAt).toLocaleString()}</time>
-                </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-ink/80">{message.body}</p>
-                {message.evidenceUrl && (
-                  <a
-                    href={message.evidenceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 flex items-start gap-2 border-t border-ink/10 pt-3 text-xs text-volt hover:text-volt-bright"
-                  >
-                    <Paperclip size={13} className="mt-0.5 shrink-0" />
-                    <span>
-                      {message.evidenceDescription || "Attached evidence"}
-                      <span className="mt-0.5 block break-all font-mono text-ink/45">{message.evidenceUrl}</span>
-                    </span>
-                  </a>
-                )}
-              </article>
-            ))
+            messages.map((message) => {
+                const role = messageRole(message.authorAddress);
+                const isCurrentUser =
+                  !!activeAddress &&
+                  message.authorAddress.toLowerCase() === activeAddress.toLowerCase();
+                const roleLabel =
+                  role === "payer" ? "Payer" : role === "payee" ? "Payee" : "Participant";
+                const tone =
+                  role === "payer"
+                    ? "border-amber-300/70 bg-amber-50/80 dark:border-amber-300/30 dark:bg-amber-300/10"
+                    : role === "payee"
+                      ? "border-emerald-300/70 bg-emerald-50/80 dark:border-emerald-300/30 dark:bg-emerald-300/10"
+                      : "border-ink/10 bg-paper-warm";
+                const labelTone =
+                  role === "payer"
+                    ? "border-amber-400/40 bg-amber-100 text-amber-800 dark:bg-amber-300/15 dark:text-amber-200"
+                    : role === "payee"
+                      ? "border-emerald-400/40 bg-emerald-100 text-emerald-800 dark:bg-emerald-300/15 dark:text-emerald-200"
+                      : "border-ink/10 bg-paper text-ink/55";
+                return (
+                  <article key={message.id} className={`border p-3 ${tone}`}>
+                    <div className="flex items-center justify-between gap-3 text-[11px] text-ink/40">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${labelTone}`}>
+                          {roleLabel}{isCurrentUser ? " · You" : ""}
+                        </span>
+                        <span className="truncate font-mono">
+                          {message.authorAddress.slice(0, 8)}…{message.authorAddress.slice(-6)}
+                        </span>
+                      </div>
+                      <time className="shrink-0">{new Date(message.createdAt).toLocaleString()}</time>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-ink/80">{message.body}</p>
+                    {message.evidenceUrl && (
+                      <a
+                        href={message.evidenceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 flex items-start gap-2 border-t border-ink/10 pt-3 text-xs text-volt hover:text-volt-bright"
+                      >
+                        <Paperclip size={13} className="mt-0.5 shrink-0" />
+                        <span>
+                          {message.evidenceDescription || "Attached evidence"}
+                          <span className="mt-0.5 block break-all font-mono text-ink/45">{message.evidenceUrl}</span>
+                        </span>
+                      </a>
+                    )}
+                  </article>
+                );
+            })
           )}
         </div>
 

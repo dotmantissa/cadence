@@ -10,7 +10,11 @@ import {
   closeBantRoom,
   getBantRoom,
 } from "@/db/queries";
-import { readArcStreamAppeal, relayArcVerdict } from "@/lib/arc-server";
+import {
+  isArcRelayerConfigured,
+  readArcStreamAppeal,
+  relayArcVerdict,
+} from "@/lib/arc-server";
 import {
   adjudicateGenLayerAppeal,
   fileGenLayerAppeal,
@@ -22,6 +26,7 @@ import { hasVerifiedWallet } from "@/lib/auth-wallet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const STALE_TRANSITION_MS = 5 * 60 * 1000;
 
 function publicAppeal(row: Awaited<ReturnType<typeof getCancellationAppeal>>) {
   if (!row) return null;
@@ -78,17 +83,34 @@ export async function POST(
   const { caseId } = await params;
   const result = await authorizedCase(req, caseId.toLowerCase());
   if ("response" in result) return result.response;
-  if (!isGenLayerConfigured()) {
-    return NextResponse.json(
-      { error: "GenLayer adjudicator is not configured" },
-      { status: 503 }
-    );
-  }
-
   const row = result.row;
+  // A crash can happen after a transition is claimed but before the external
+  // transaction hash is persisted. Release those short-lived locks so the
+  // next dashboard poll can retry the exact step.
+  if (Date.now() - row.updatedAt.getTime() > STALE_TRANSITION_MS) {
+    if (row.status === "filing" && !row.fileTxHash) {
+      await updateCancellationAppeal(row.caseId, {
+        status: "bant",
+        lastError: "Retrying the GenLayer appeal submission",
+      });
+    } else if (row.status === "adjudicating" && !row.adjudicationTxHash) {
+      await updateCancellationAppeal(row.caseId, {
+        status: "filed",
+        lastError: "Retrying GenLayer adjudication",
+      });
+    } else if (row.status === "relaying" && !row.relayTxHash) {
+      await updateCancellationAppeal(row.caseId, {
+        status: "adjudicating",
+        lastError: "Retrying Arc verdict relay",
+      });
+    }
+  }
   try {
     if ((row.status === "prepared" || row.status === "bant") && !row.fileTxHash) {
-      const arc = await readArcStreamAppeal(BigInt(row.streamId));
+      const arc = await readArcStreamAppeal(
+        BigInt(row.streamId),
+        (row.payrollAddress as `0x${string}` | null) ?? undefined
+      );
       if (arc.cancellation.status !== 2) {
         return badRequest("wait for the Arc appeal transaction to confirm");
       }
@@ -106,6 +128,15 @@ export async function POST(
       if (!room) return badRequest("could not open Bant room");
       if (BigInt(Math.floor(Date.now() / 1000)) < arc.bantDeadline) {
         await claimCancellationAppeal(row.caseId, ["prepared"], "bant");
+        return NextResponse.json({ appeal: publicAppeal(await getCancellationAppeal(row.caseId)) });
+      }
+
+      if (!isGenLayerConfigured() || !isArcRelayerConfigured()) {
+        await updateCancellationAppeal(row.caseId, {
+          status: "bant",
+          lastError:
+            "Adjudication configuration is incomplete; Bant transcript is preserved",
+        });
         return NextResponse.json({ appeal: publicAppeal(await getCancellationAppeal(row.caseId)) });
       }
 
@@ -195,7 +226,8 @@ export async function POST(
             const relayTxHash = await relayArcVerdict(
               BigInt(row.streamId),
               verdict.appeal_upheld === true,
-              verdictHash
+              verdictHash,
+              (row.payrollAddress as `0x${string}` | null) ?? undefined
             );
             await updateCancellationAppeal(row.caseId, {
               status: "complete",

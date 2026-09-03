@@ -43,6 +43,13 @@
       "when": 1788342696354,
       "tag": "0005_gorgeous_maximus",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788434902184,
+      "tag": "0006_busy_valeria_richards",
+      "breakpoints": true
     }
   ]
 }

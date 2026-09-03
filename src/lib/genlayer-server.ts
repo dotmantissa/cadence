@@ -9,35 +9,87 @@ import {
 } from "genlayer-js/types";
 import type { ArcStreamAppeal } from "./arc-server";
 
-const contractAddress = process.env.GENLAYER_CONTRACT_ADDRESS as
-  | `0x${string}`
-  | undefined;
-const privateKey = process.env.GENLAYER_PRIVATE_KEY as
-  | `0x${string}`
-  | undefined;
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
 
 export function isGenLayerConfigured(): boolean {
-  return Boolean(contractAddress && privateKey);
+  return Boolean(
+    ADDRESS.test(process.env.GENLAYER_CONTRACT_ADDRESS ?? "") &&
+      PRIVATE_KEY.test(process.env.GENLAYER_PRIVATE_KEY ?? "")
+  );
+}
+
+export type GenLayerReadiness = {
+  configured: boolean;
+  reachable: boolean;
+  contractAddress: string | null;
+  accountAddress: string | null;
+  error: string | null;
+};
+
+function configuredAddress(): `0x${string}` {
+  const value = process.env.GENLAYER_CONTRACT_ADDRESS ?? "";
+  if (!ADDRESS.test(value)) {
+    throw new Error("GENLAYER_CONTRACT_ADDRESS is not configured");
+  }
+  return value as `0x${string}`;
+}
+
+function configuredPrivateKey(): `0x${string}` {
+  const value = process.env.GENLAYER_PRIVATE_KEY ?? "";
+  if (!PRIVATE_KEY.test(value)) {
+    throw new Error("GENLAYER_PRIVATE_KEY is not configured");
+  }
+  return value as `0x${string}`;
 }
 
 function client() {
-  if (!contractAddress) {
-    throw new Error("GENLAYER_CONTRACT_ADDRESS is not configured");
-  }
-  if (!privateKey || !/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
-    throw new Error("GENLAYER_PRIVATE_KEY is not configured");
-  }
   return createClient({
     chain: studionet,
-    account: createAccount(privateKey),
+    account: createAccount(configuredPrivateKey()),
   });
 }
 
 function address(): `0x${string}` {
-  if (!contractAddress) {
-    throw new Error("GENLAYER_CONTRACT_ADDRESS is not configured");
+  return configuredAddress();
+}
+
+export async function getGenLayerReadiness(): Promise<GenLayerReadiness> {
+  const contract = process.env.GENLAYER_CONTRACT_ADDRESS ?? "";
+  const key = process.env.GENLAYER_PRIVATE_KEY ?? "";
+  const configured = ADDRESS.test(contract) && PRIVATE_KEY.test(key);
+  if (!configured) {
+    return {
+      configured: false,
+      reachable: false,
+      contractAddress: ADDRESS.test(contract) ? contract : null,
+      accountAddress: null,
+      error: "GenLayer adjudicator is not configured",
+    };
   }
-  return contractAddress;
+
+  const account = createAccount(key as `0x${string}`);
+  try {
+    const schema = await client().getContractSchema(address());
+    if (!schema?.methods?.file_appeal_with_bant || !schema.methods.adjudicate) {
+      throw new Error("configured GenLayer contract is missing the Cadence adjudicator methods");
+    }
+    return {
+      configured: true,
+      reachable: true,
+      contractAddress: contract,
+      accountAddress: account.address,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      reachable: false,
+      contractAddress: contract,
+      accountAddress: account.address,
+      error: error instanceof Error ? error.message : "GenLayer adjudicator is unreachable",
+    };
+  }
 }
 
 export async function fileGenLayerAppeal(
@@ -51,7 +103,7 @@ export async function fileGenLayerAppeal(
     args: [
       arc.caseId,
       BigInt(arcTestnetChainId),
-      PAYROLL_ADDRESS_LOWER,
+      arc.payrollAddress.toLowerCase(),
       arc.streamId,
       arc.cancellation.nonce,
       arc.employer.toLowerCase(),
@@ -72,10 +124,6 @@ export async function fileGenLayerAppeal(
 }
 
 const arcTestnetChainId = 5042002;
-const PAYROLL_ADDRESS_LOWER = (
-  process.env.NEXT_PUBLIC_PAYROLL_ADDRESS ?? ""
-).toLowerCase();
-
 export async function adjudicateGenLayerAppeal(caseId: string) {
   const hash = await client().writeContract({
     address: address(),
@@ -89,7 +137,7 @@ export async function adjudicateGenLayerAppeal(caseId: string) {
 export async function readGenLayerCase(caseId: string) {
   return (await client().readContract({
     address: address(),
-    functionName: "get_case",
+    functionName: "get_verdict",
     args: [caseId],
   })) as Record<string, unknown>;
 }
@@ -114,9 +162,20 @@ export async function getGenLayerTxState(
     return { state: "pending" };
   }
   if (transaction.txExecutionResultName === ExecutionResult.FINISHED_WITH_ERROR) {
+    let detail = "GenLayer transaction finalized with an execution error";
+    try {
+      const trace = await gl.debugTraceTransaction({ hash: txHash });
+      const traceError = [trace.stderr, trace.genvm_log]
+        .filter((value) => typeof value === "string" && value.trim())
+        .join("\n")
+        .trim();
+      if (traceError) detail = traceError.slice(0, 1000);
+    } catch {
+      // Keep the stable error when the optional trace endpoint is unavailable.
+    }
     return {
       state: "failed",
-      error: "GenLayer transaction finalized with an execution error",
+      error: detail,
     };
   }
   return { state: "finalized" };

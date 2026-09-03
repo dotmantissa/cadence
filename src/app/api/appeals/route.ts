@@ -108,7 +108,12 @@ export async function POST(req: Request) {
 
   let arc;
   try {
-    arc = await readArcStreamAppeal(BigInt(String(streamIdRaw)));
+    const payrollAddress =
+      typeof input.payrollAddress === "string" ? input.payrollAddress.trim() : undefined;
+    arc = await readArcStreamAppeal(
+      BigInt(String(streamIdRaw)),
+      payrollAddress as `0x${string}` | undefined
+    );
   } catch {
     return NextResponse.json({ error: "could not read the Arc cancellation" }, { status: 502 });
   }
@@ -197,6 +202,7 @@ export async function POST(req: Request) {
     cancellationNonce: arc.cancellation.nonce.toString(),
     payerAddress: arc.employer.toLowerCase(),
     payeeAddress: arc.employee.toLowerCase(),
+    payrollAddress: arc.payrollAddress.toLowerCase(),
     evidenceUri,
     evidenceHash,
     evidencePackage,

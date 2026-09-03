@@ -113,7 +113,10 @@ export async function POST(
 
   let arc;
   try {
-    arc = await readArcStreamAppeal(BigInt(result.appeal.streamId));
+    arc = await readArcStreamAppeal(
+      BigInt(result.appeal.streamId),
+      (result.appeal.payrollAddress as `0x${string}` | null) ?? undefined
+    );
   } catch {
     return NextResponse.json({ error: "could not read Arc Bant deadline" }, { status: 502 });
   }

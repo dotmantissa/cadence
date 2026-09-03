@@ -83,12 +83,20 @@ export function AppealCancellationModal({ stream, cancellation, onClose, onSubmi
       if (!address) {
         throw new Error("Connect the payee wallet before filing this appeal");
       }
+      const readiness = await api.getAppealReadiness();
+      if (!readiness.configured || !readiness.reachable) {
+        throw new Error(
+          readiness.error ??
+            "The GenLayer adjudicator is temporarily unavailable. Try again shortly."
+        );
+      }
       const authorizationMessage = appealAuthorizationMessage(stream.id, address);
       const authorizationSignature = await signMessageAsync({
         message: authorizationMessage,
       });
       const prepared = await api.prepareCancellationAppeal({
         streamId: stream.id.toString(),
+        payrollAddress: stream.payrollAddress,
         walletAddress: address,
         walletProof: {
           message: authorizationMessage,

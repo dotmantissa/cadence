@@ -14,6 +14,13 @@ export const PAYROLL_ADDRESSES = Array.from(
 
 export const PAYROLL_ABI = [
   {
+    type: "function",
+    name: "adjudicator",
+    inputs: [],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
+    stateMutability: "view",
+  },
+  {
     type: "constructor",
     inputs: [
       { name: "_usdc", type: "address", internalType: "address" },

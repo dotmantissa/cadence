@@ -21,9 +21,11 @@ const publicClient = createPublicClient({
   chain: arcTestnet,
   transport,
 });
+const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
 
 export interface ArcStreamAppeal {
   streamId: bigint;
+  payrollAddress: `0x${string}`;
   employer: `0x${string}`;
   employee: `0x${string}`;
   ratePerSecond: bigint;
@@ -46,35 +48,37 @@ export interface ArcStreamAppeal {
 }
 
 export async function readArcStreamAppeal(
-  streamId: bigint
+  streamId: bigint,
+  payrollAddress?: `0x${string}`
 ): Promise<ArcStreamAppeal> {
+  const address = payrollAddress ?? PAYROLL_ADDRESS;
   const [streamRaw, deliverables, bantDeadline, cancellationRaw, caseId] = await Promise.all([
     publicClient.readContract({
-      address: PAYROLL_ADDRESS,
+      address,
       abi: PAYROLL_ABI,
       functionName: "streams",
       args: [streamId],
     }),
     publicClient.readContract({
-      address: PAYROLL_ADDRESS,
+      address,
       abi: PAYROLL_ABI,
       functionName: "deliverables",
       args: [streamId],
     }),
     publicClient.readContract({
-      address: PAYROLL_ADDRESS,
+      address,
       abi: PAYROLL_ABI,
       functionName: "bantDeadline",
       args: [streamId],
     }),
     publicClient.readContract({
-      address: PAYROLL_ADDRESS,
+      address,
       abi: PAYROLL_ABI,
       functionName: "cancellations",
       args: [streamId],
     }),
     publicClient.readContract({
-      address: PAYROLL_ADDRESS,
+      address,
       abi: PAYROLL_ABI,
       functionName: "cancellationCaseId",
       args: [streamId],
@@ -108,6 +112,7 @@ export async function readArcStreamAppeal(
 
   return {
     streamId,
+    payrollAddress: address,
     employer,
     employee,
     ratePerSecond,
@@ -132,25 +137,40 @@ export async function readArcStreamAppeal(
 
 function adjudicatorAccount() {
   const key = process.env.ADJUDICATOR_PRIVATE_KEY ?? process.env.PRIVATE_KEY;
-  if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
+  if (!key || !PRIVATE_KEY.test(key)) {
     throw new Error("ADJUDICATOR_PRIVATE_KEY is not configured");
   }
   return privateKeyToAccount(key as Hex);
 }
 
+export function isArcRelayerConfigured(): boolean {
+  const key = process.env.ADJUDICATOR_PRIVATE_KEY ?? process.env.PRIVATE_KEY;
+  return Boolean(key && PRIVATE_KEY.test(key));
+}
+
 export async function relayArcVerdict(
   streamId: bigint,
   appealUpheld: boolean,
-  verdictHash: Hex
+  verdictHash: Hex,
+  payrollAddress?: `0x${string}`
 ) {
+  const address = payrollAddress ?? PAYROLL_ADDRESS;
   const account = adjudicatorAccount();
   const walletClient = createWalletClient({
     account,
     chain: arcTestnet,
     transport,
   });
+  const configuredAdjudicator = await publicClient.readContract({
+    address,
+    abi: PAYROLL_ABI,
+    functionName: "adjudicator",
+  });
+  if (configuredAdjudicator.toLowerCase() !== account.address.toLowerCase()) {
+    throw new Error("Arc PayrollManager adjudicator does not match the configured relayer wallet");
+  }
   const hash = await walletClient.writeContract({
-    address: PAYROLL_ADDRESS,
+    address,
     abi: PAYROLL_ABI,
     functionName: "resolveCancellation",
     args: [streamId, appealUpheld, verdictHash],

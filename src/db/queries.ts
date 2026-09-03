@@ -373,6 +373,7 @@ export async function prepareCancellationAppeal(input: {
   ownerId: string;
   caseId: string;
   streamId: string;
+  payrollAddress: string;
   cancellationNonce: string;
   payerAddress: string;
   payeeAddress: string;

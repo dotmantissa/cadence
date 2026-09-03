@@ -81,6 +81,15 @@ export function useApi() {
     /** Remove the notification email from the current account. */
     removeNotificationEmail: () =>
       request<{ user: User }>("/api/me/email", { method: "DELETE" }),
+    getAppealReadiness: () =>
+      request<{
+        configured: boolean;
+        reachable: boolean;
+        contractAddress: string | null;
+        accountAddress: string | null;
+        arcRelayerConfigured: boolean;
+        error: string | null;
+      }>("/api/appeals/readiness"),
 
     checkUsername: (u: string) =>
       request<{ available: boolean; reason?: string }>(
@@ -107,6 +116,7 @@ export function useApi() {
 
     prepareCancellationAppeal: (input: {
       streamId: string;
+      payrollAddress: `0x${string}`;
       walletAddress: string;
       walletProof: { message: string; signature: `0x${string}` };
       statement: string;

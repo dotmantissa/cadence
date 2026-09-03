@@ -132,6 +132,9 @@ export const cancellationAppeals = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     caseId: text("case_id").notNull().unique(),
     streamId: text("stream_id").notNull(),
+    // Nullable for appeal rows created before multi-deployment support. New
+    // rows always persist the exact PayrollManager address involved.
+    payrollAddress: text("payroll_address"),
     cancellationNonce: text("cancellation_nonce").notNull(),
     payerAddress: text("payer_address").notNull(),
     payeeAddress: text("payee_address").notNull(),

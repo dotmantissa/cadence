@@ -71,7 +71,12 @@ export async function getGenLayerReadiness(): Promise<GenLayerReadiness> {
   const account = createAccount(key as `0x${string}`);
   try {
     const schema = await client().getContractSchema(address());
-    if (!schema?.methods?.file_appeal_with_bant || !schema.methods.adjudicate) {
+    if (
+      !schema?.methods?.file_appeal_with_bant ||
+      !schema.methods.adjudicate ||
+      !schema.methods.get_case ||
+      !schema.methods.get_verdict
+    ) {
       throw new Error("configured GenLayer contract is missing the Cadence adjudicator methods");
     }
     return {

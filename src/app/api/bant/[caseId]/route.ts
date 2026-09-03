@@ -57,9 +57,10 @@ async function authorized(req: Request, caseId: string) {
   if ("response" in gate) return { response: gate.response } as const;
   const appeal = await getCancellationAppeal(caseId);
   if (!appeal) return { response: NextResponse.json({ error: "not found" }, { status: 404 }) } as const;
-  const wallet = [appeal.payerAddress, appeal.payeeAddress].find((address) =>
+  const linkedWallet = [appeal.payerAddress, appeal.payeeAddress].find((address) =>
     hasVerifiedWallet(gate.caller.walletAddresses, address)
   );
+  const wallet = linkedWallet ?? (appeal.ownerId === gate.user.id ? appeal.payeeAddress : undefined);
   if (!wallet) {
     return { response: NextResponse.json({ error: "forbidden" }, { status: 403 }) } as const;
   }

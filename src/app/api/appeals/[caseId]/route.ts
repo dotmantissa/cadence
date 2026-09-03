@@ -46,6 +46,7 @@ async function authorizedCase(req: Request, caseId: string) {
   const row = await getCancellationAppeal(caseId);
   if (!row) return { response: NextResponse.json({ error: "not found" }, { status: 404 }) } as const;
   if (
+    row.ownerId !== gate.user.id &&
     ![row.payerAddress, row.payeeAddress].some((address) =>
       hasVerifiedWallet(gate.caller.walletAddresses, address)
     )

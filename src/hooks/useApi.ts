@@ -107,6 +107,8 @@ export function useApi() {
 
     prepareCancellationAppeal: (input: {
       streamId: string;
+      walletAddress: string;
+      walletProof: { message: string; signature: `0x${string}` };
       statement: string;
       sources: { type: AppealSourceType; url: string; description: string }[];
     }) =>

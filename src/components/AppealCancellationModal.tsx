@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useConfig } from "wagmi";
+import { useConfig, useSignMessage } from "wagmi";
 import { waitForSuccessfulReceipt } from "@/lib/tx";
 import { useApi } from "@/hooks/useApi";
 import { useAppealCancellation } from "@/hooks/usePayroll";
 import type { CancellationMeta, StreamMeta } from "@/hooks/usePayroll";
-import { APPEAL_SOURCE_TYPES, type AppealSourceType } from "@/lib/appeals";
+import { appealAuthorizationMessage, APPEAL_SOURCE_TYPES, type AppealSourceType } from "@/lib/appeals";
+import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { formatUsdc } from "@/lib/utils";
 import { Modal } from "./Modal";
 import { BantRoom } from "./BantRoom";
@@ -24,6 +25,8 @@ const field =
 
 export function AppealCancellationModal({ stream, cancellation, onClose, onSubmitted }: Props) {
   const config = useConfig();
+  const { address } = useActiveAddress();
+  const { signMessageAsync } = useSignMessage();
   const { api } = useApi();
   const { appeal } = useAppealCancellation();
   const [statement, setStatement] = useState("");
@@ -77,8 +80,20 @@ export function AppealCancellationModal({ stream, cancellation, onClose, onSubmi
     setError(null);
     setStatus("preparing");
     try {
+      if (!address) {
+        throw new Error("Connect the payee wallet before filing this appeal");
+      }
+      const authorizationMessage = appealAuthorizationMessage(stream.id, address);
+      const authorizationSignature = await signMessageAsync({
+        message: authorizationMessage,
+      });
       const prepared = await api.prepareCancellationAppeal({
         streamId: stream.id.toString(),
+        walletAddress: address,
+        walletProof: {
+          message: authorizationMessage,
+          signature: authorizationSignature,
+        },
         statement: statement.trim(),
         sources: sources.map((source) => ({ ...source, url: source.url.trim(), description: source.description.trim() })),
       });

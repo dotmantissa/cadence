@@ -1,9 +1,14 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
+import { verifyMessage, type Hex } from "viem";
 import { requireUser, badRequest } from "../_auth";
 import { prepareCancellationAppeal } from "@/db/queries";
 import { readArcStreamAppeal } from "@/lib/arc-server";
-import { APPEAL_SOURCE_TYPES, type AppealSourceType } from "@/lib/appeals";
+import {
+  appealAuthorizationMessage,
+  APPEAL_SOURCE_TYPES,
+  type AppealSourceType,
+} from "@/lib/appeals";
 import { hasVerifiedWallet } from "@/lib/auth-wallet";
 
 export const runtime = "nodejs";
@@ -93,6 +98,13 @@ export async function POST(req: Request) {
   if (!Array.isArray(input.sources) || input.sources.length < 1 || input.sources.length > 8) {
     return badRequest("provide one to eight evidence sources");
   }
+  const walletAddress = typeof input.walletAddress === "string" ? input.walletAddress.trim() : "";
+  if (!ADDRESS.test(walletAddress)) return badRequest("walletAddress must be an EVM address");
+  const proof = (input.walletProof ?? {}) as Record<string, unknown>;
+  const signature = typeof proof.signature === "string" ? proof.signature : "";
+  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) {
+    return badRequest("walletProof.signature must be a signed message");
+  }
 
   let arc;
   try {
@@ -100,7 +112,24 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "could not read the Arc cancellation" }, { status: 502 });
   }
-  if (!hasVerifiedWallet(gate.caller.walletAddresses, arc.employee)) {
+  if (walletAddress.toLowerCase() !== arc.employee.toLowerCase()) {
+    return NextResponse.json({ error: "only the payee can file this appeal" }, { status: 403 });
+  }
+  const expectedMessage = appealAuthorizationMessage(arc.streamId, arc.employee);
+  if (proof.message !== expectedMessage) {
+    return NextResponse.json({ error: "invalid payee authorization" }, { status: 403 });
+  }
+  let authorizedBySignature = false;
+  try {
+    authorizedBySignature = await verifyMessage({
+      address: arc.employee,
+      message: expectedMessage,
+      signature: signature as Hex,
+    });
+  } catch {
+    authorizedBySignature = false;
+  }
+  if (!authorizedBySignature && !hasVerifiedWallet(gate.caller.walletAddresses, arc.employee)) {
     return NextResponse.json({ error: "only the payee can file this appeal" }, { status: 403 });
   }
   if (arc.cancellation.status !== 1) {

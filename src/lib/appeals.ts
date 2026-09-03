@@ -40,6 +40,18 @@ export interface AppealProgress {
   lastError: string | null;
 }
 
+export function appealAuthorizationMessage(
+  streamId: bigint | string | number,
+  payeeAddress: string
+): string {
+  return [
+    "Cadence appeal authorization",
+    `Stream ID: ${String(streamId)}`,
+    `Payee: ${payeeAddress.toLowerCase()}`,
+    "Purpose: file a cancellation appeal",
+  ].join("\n");
+}
+
 export function isOpenCancellationStatus(status: number): boolean {
   return status === 1 || status === 2;
 }

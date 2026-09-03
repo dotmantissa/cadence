@@ -134,12 +134,53 @@ export async function adjudicateGenLayerAppeal(caseId: string) {
   return String(hash);
 }
 
-export async function readGenLayerCase(caseId: string) {
-  return (await client().readContract({
-    address: address(),
-    functionName: "get_verdict",
-    args: [caseId],
-  })) as Record<string, unknown>;
+export async function readGenLayerCase(
+  caseId: string
+): Promise<Record<string, unknown>> {
+  const gl = client();
+  const [caseState, verdict] = await Promise.all([
+    gl.readContract({
+      address: address(),
+      functionName: "get_case",
+      args: [caseId],
+    }),
+    gl.readContract({
+      address: address(),
+      functionName: "get_verdict",
+      args: [caseId],
+    }),
+  ]);
+  const state = caseState as Record<string, unknown>;
+  return {
+    ...(verdict as Record<string, unknown>),
+    status: state.status,
+    case_id: state.case_id ?? (verdict as Record<string, unknown>).case_id,
+  };
+}
+
+export function isFinalizedGenLayerVerdict(
+  verdict: Record<string, unknown>,
+  expectedCaseId: string
+): boolean {
+  const normalize = (value: unknown) =>
+    typeof value === "string" ? value.toLowerCase().replace(/^0x/, "") : "";
+  const verdictHash = normalize(verdict.verdict_hash);
+  const confidence = verdict.confidence;
+  const validConfidence =
+    (typeof confidence === "number" &&
+      Number.isInteger(confidence) &&
+      confidence >= 0 &&
+      confidence <= 100) ||
+    typeof confidence === "bigint";
+  return (
+    verdict.ready === true &&
+    verdict.status === "ruled" &&
+    normalize(verdict.case_id) === normalize(expectedCaseId) &&
+    typeof verdict.appeal_upheld === "boolean" &&
+    typeof verdict.reason_code === "string" &&
+    validConfidence &&
+    /^([0-9a-f]{64})$/.test(verdictHash)
+  );
 }
 
 export type GenLayerTxState =

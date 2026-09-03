@@ -65,6 +65,27 @@ Put together, the single-asset USDC model, sub-second finality, and stable fees 
 - **App routes:** a same-origin RPC proxy keeps browser reads reliable, plus routes for identity resolution and one-click testnet funding.
 - **Hosting:** Vercel.
 
+### GenLayer-to-Arc release test
+
+The cross-chain relay has an opt-in live-chain test. It reads the same
+GenLayer `get_case` and `get_verdict` records used by the server, requires the
+case to be `ruled`, and sends the finalized binary result to Arc
+`resolveCancellation`. Run it only with a configured appealed stream whose Bant
+window is closed:
+
+```bash
+GENLAYER_CONTRACT_ADDRESS=0x... \
+GENLAYER_PRIVATE_KEY=0x... \
+NEXT_PUBLIC_PAYROLL_ADDRESS=0x... \
+ARC_ADJUDICATOR_PRIVATE_KEY=0x... \
+E2E_STREAM_ID=123 \
+npm run test:e2e:genlayer-arc
+```
+
+The Arc relay key must equal the deployed `PayrollManager.adjudicator`, and
+the test intentionally consumes a pre-existing finalized case so it never
+creates or abandons production escrow as part of a release check.
+
 ## Notes
 
 - USDC on Arc uses **6 decimals** through its ERC-20 interface, even though the network uses USDC as its native gas token (18 decimals internally). Every amount in this app is 6-decimal USDC.

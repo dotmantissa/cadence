@@ -19,6 +19,7 @@ import {
   adjudicateGenLayerAppeal,
   fileGenLayerAppeal,
   getGenLayerTxState,
+  isFinalizedGenLayerVerdict,
   isGenLayerConfigured,
   readGenLayerCase,
 } from "@/lib/genlayer-server";
@@ -214,15 +215,21 @@ export async function POST(
         await updateCancellationAppeal(row.caseId, { status: "failed", lastError: state.error });
       } else if (state.state === "finalized") {
         const verdict = await readGenLayerCase(row.caseId);
-        if (verdict.ready !== true || typeof verdict.verdict_hash !== "string") {
+        if (!isFinalizedGenLayerVerdict(verdict, row.caseId)) {
+          if (verdict.status === "ruled") {
+            await updateCancellationAppeal(row.caseId, {
+              lastError: "GenLayer returned an invalid finalized verdict",
+            });
+          }
           return NextResponse.json({ appeal: publicAppeal(await getCancellationAppeal(row.caseId)) });
         }
         const claimed = await claimCancellationAppeal(row.caseId, ["adjudicating"], "relaying");
         if (claimed) {
           try {
-            const verdictHash = (verdict.verdict_hash.startsWith("0x")
-              ? verdict.verdict_hash
-              : `0x${verdict.verdict_hash}`) as `0x${string}`;
+            const rawVerdictHash = verdict.verdict_hash as string;
+            const verdictHash = (rawVerdictHash.startsWith("0x")
+              ? rawVerdictHash
+              : `0x${rawVerdictHash}`) as `0x${string}`;
             const relayTxHash = await relayArcVerdict(
               BigInt(row.streamId),
               verdict.appeal_upheld === true,

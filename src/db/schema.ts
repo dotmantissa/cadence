@@ -7,6 +7,7 @@ import {
   numeric,
   index,
   uniqueIndex,
+  integer,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -204,6 +205,33 @@ export const bantMessages = pgTable(
   })
 );
 
+/** Singleton project configuration controlled by the verified project account. */
+export const projectSettings = pgTable("project_settings", {
+  id: integer("id").primaryKey().default(1),
+  feeRecipient: text("fee_recipient"),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Minimal audit trail for privileged control-room mutations. */
+export const adminAuditLogs = pgTable(
+  "admin_audit_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    adminUserId: uuid("admin_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    adminIdx: index("admin_audit_logs_admin_idx").on(t.adminUserId),
+    createdIdx: index("admin_audit_logs_created_idx").on(t.createdAt),
+  })
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Payee = typeof payees.$inferSelect;
@@ -211,3 +239,5 @@ export type StreamDraft = typeof streamDrafts.$inferSelect;
 export type CancellationAppeal = typeof cancellationAppeals.$inferSelect;
 export type BantRoom = typeof bantRooms.$inferSelect;
 export type BantMessage = typeof bantMessages.$inferSelect;
+export type ProjectSettings = typeof projectSettings.$inferSelect;
+export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;

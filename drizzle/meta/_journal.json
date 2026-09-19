@@ -50,6 +50,13 @@
       "when": 1788434902184,
       "tag": "0006_busy_valeria_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789800000000,
+      "tag": "0007_mainnet_control_room",
+      "breakpoints": true
     }
   ]
 }

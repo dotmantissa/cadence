@@ -10,6 +10,8 @@ import { Logo } from "./Logo";
 import { ConnectWallet } from "./ConnectWallet";
 import { ThemeToggle } from "./ThemeToggle";
 import { cn } from "@/lib/utils";
+import { useProfileContext } from "./ProfileProvider";
+import { isOfficialAdminEmail } from "@/lib/admin";
 
 const links = [
   { href: "/payer", label: "Pay" },
@@ -19,6 +21,11 @@ const links = [
 export function Navbar() {
   const pathname = usePathname();
   const { authenticated } = usePrivy();
+  const { user } = useProfileContext();
+  const isAdmin = authenticated && isOfficialAdminEmail(user?.email);
+  const visibleLinks = isAdmin
+    ? [...links, { href: "/analytics", label: "Control room" }]
+    : links;
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -57,7 +64,7 @@ export function Navbar() {
           <Logo />
 
           <div className="hidden items-center gap-1 md:flex">
-            {links.map((l) => (
+            {visibleLinks.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
@@ -119,7 +126,7 @@ export function Navbar() {
             className="fixed inset-0 z-40 bg-paper/95 backdrop-blur-xl md:hidden"
           >
             <div className="flex flex-col gap-2 px-6 pt-24">
-              {links.map((l, i) => (
+              {visibleLinks.map((l, i) => (
                 <motion.div
                   key={l.href}
                   initial={{ opacity: 0, x: -20 }}

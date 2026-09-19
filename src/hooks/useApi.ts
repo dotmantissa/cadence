@@ -265,6 +265,21 @@ export function useApi() {
       }),
     deleteDraft: (id: string) =>
       request<{ ok: true }>(`/api/drafts/${id}`, { method: "DELETE" }),
+
+    getAdminAnalytics: () =>
+      request<{ analytics: import("@/lib/admin-analytics").AnalyticsPayload }>(
+        "/api/admin/analytics"
+      ),
+    getAdminSettings: () =>
+      request<{
+        settings: { feeRecipient: string | null; onchainRoutingActive: boolean };
+        audit: { id: string; action: string; metadata: Record<string, unknown>; createdAt: string }[];
+      }>("/api/admin/settings"),
+    updateAdminSettings: (feeRecipient: string | null) =>
+      request<{ settings: { feeRecipient: string | null; onchainRoutingActive: boolean } }>(
+        "/api/admin/settings",
+        { method: "PATCH", body: JSON.stringify({ feeRecipient }) }
+      ),
   };
 
   return { ready, authenticated, api };

@@ -9,6 +9,8 @@ import {
   cancellationAppeals,
   bantRooms,
   bantMessages,
+  projectSettings,
+  adminAuditLogs,
   type AppealEvidenceSource,
 } from "./schema";
 import type { Caller } from "@/lib/privy-server";
@@ -558,4 +560,45 @@ export async function deleteDraft(ownerId: string, id: string) {
     .where(and(eq(streamDrafts.id, id), eq(streamDrafts.ownerId, ownerId)))
     .returning();
   return row ?? null;
+}
+
+export async function getProjectSettings() {
+  const [row] = await db.select().from(projectSettings).where(eq(projectSettings.id, 1)).limit(1);
+  return row ?? null;
+}
+
+export async function setProjectFeeRecipient(
+  userId: string,
+  feeRecipient: string | null
+) {
+  const now = new Date();
+  const [row] = await db
+    .insert(projectSettings)
+    .values({ id: 1, feeRecipient, updatedBy: userId, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({
+      target: projectSettings.id,
+      set: { feeRecipient, updatedBy: userId, updatedAt: now },
+    })
+    .returning();
+  return row;
+}
+
+export async function addAdminAuditLog(
+  adminUserId: string,
+  action: string,
+  metadata: Record<string, unknown>
+) {
+  const [row] = await db
+    .insert(adminAuditLogs)
+    .values({ adminUserId, action, metadata })
+    .returning();
+  return row;
+}
+
+export async function listAdminAuditLogs(limit = 25) {
+  return db
+    .select()
+    .from(adminAuditLogs)
+    .orderBy(desc(adminAuditLogs.createdAt))
+    .limit(Math.min(Math.max(limit, 1), 100));
 }

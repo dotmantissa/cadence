@@ -41,7 +41,7 @@ export function Footer() {
             <ul className="mt-5 space-y-3 text-sm">
               <li>
                 <a
-                  href="https://testnet.arcscan.app"
+                  href="https://explorer.arc.io"
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-panel-foreground/70 transition-colors hover:text-panel-foreground"
@@ -81,10 +81,10 @@ export function Footer() {
 
         <div className="mt-16 flex flex-col items-start justify-between gap-4 border-t border-white/10 pt-8 sm:flex-row sm:items-center">
           <p className="text-xs text-panel-foreground/40">
-            Cadence runs on Arc Testnet. Not financial advice, obviously.
+            Cadence runs on Arc Mainnet. Not financial advice.
           </p>
           <p className="font-mono text-xs text-panel-foreground/40">
-            chain 5042002 // usdc native
+            chain 5042 // usdc native
           </p>
         </div>
       </div>

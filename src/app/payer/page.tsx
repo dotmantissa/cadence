@@ -15,7 +15,6 @@ import { AppealWorkflowRecovery } from "@/components/AppealWorkflowRecovery";
 import { TopUpModal } from "@/components/TopUpModal";
 import { ViewTabs } from "@/components/ViewTabs";
 import { FlowField } from "@/components/motion/FlowField";
-import { FaucetButton } from "@/components/FaucetButton";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
 import {
   useEmployerStreams,
@@ -154,9 +153,6 @@ export default function EmployerPage() {
                   `$${formatUsdc(balance)}`
                 )}
               </p>
-              <div className="mt-4">
-                <FaucetButton />
-              </div>
             </div>
             <div className="text-right">
               <div className="flex items-center justify-end gap-2 text-xs text-panel-foreground/50">

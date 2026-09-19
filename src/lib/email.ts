@@ -129,7 +129,7 @@ function shell(inner: string, preheader: string): string {
             <tr>
               <td style="padding:28px 32px 8px;">
                 <span style="font-size:19px;font-weight:700;letter-spacing:-0.02em;color:${BRAND.ink};">Cadence</span>
-                <span style="display:inline-block;margin-left:6px;font-size:12px;color:${BRAND.faint};font-family:'SFMono-Regular',Consolas,monospace;">// payments that stream</span>
+                <span style="display:inline-block;margin-left:6px;font-size:12px;color:${BRAND.faint};font-family:'SFMono-Regular',Consolas,monospace;">// Arc Mainnet</span>
               </td>
             </tr>
             <tr>
@@ -144,7 +144,7 @@ function shell(inner: string, preheader: string): string {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
             <tr>
               <td style="padding:18px 32px;color:${BRAND.faint};font-size:12px;line-height:1.6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-                You are getting this because your email is linked to a Cadence account. Your funds and streams live on-chain and keep running whether or not you open this.
+                You are getting this because your email is linked to a Cadence account. Your funds and streams live on Arc Mainnet and keep running whether or not you open this.
                 <br />
                 <a href="${APP_URL}/profile" style="color:${BRAND.muted};text-decoration:underline;">Manage your account</a>
               </td>
@@ -193,7 +193,7 @@ function render(c: Compose): EmailContent {
     textParts.push("", `${c.cta.label}: ${absolute(c.cta.href)}`);
   }
   if (c.outro) textParts.push("", c.outro);
-  textParts.push("", "Cadence // payments that stream", `${APP_URL}/profile`);
+  textParts.push("", "Cadence // Arc Mainnet", `${APP_URL}/profile`);
 
   return {
     subject: c.subject,
@@ -240,11 +240,11 @@ function greeting(name?: string | null): string {
 export function welcomeEmail(name?: string | null): EmailContent {
   return render({
     subject: "Welcome to Cadence",
-    preheader: "Your account is ready. Here is how streaming payments work.",
+    preheader: "Your Arc Mainnet account is ready. Here is how streaming payments work.",
     heading: "Welcome to Cadence",
     paragraphs: [
       greeting(name),
-      "Cadence pays people by the second. You deposit once, and the money moves continuously to whoever you are paying. They can watch it add up and cash out whenever they want.",
+      "Cadence pays people by the second on Arc Mainnet using real USDC. You deposit once, and the money moves continuously to whoever you are paying. They can watch it add up and cash out whenever they want.",
       "Head to your dashboard to open your first stream or set up your handle so people can pay you by name instead of a wallet address.",
     ],
     cta: { label: "Open Cadence", href: "/payer" },
@@ -650,4 +650,3 @@ export function streamCancelledPayeeEmail(
     cta: { label: "Open your dashboard", href: "/payee" },
   });
 }
-

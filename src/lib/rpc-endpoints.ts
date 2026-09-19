@@ -1,11 +1,11 @@
 /**
- * Arc testnet JSON-RPC upstreams, used ONLY on the server (the `/api/rpc` proxy
+ * Arc Mainnet JSON-RPC upstreams, used ONLY on the server (the `/api/rpc` proxy
  * and any SSR read). The browser never sees these hostnames — see the note below.
  *
  * Why a server-side list at all:
- *  - Circle's primary `rpc.testnet.arc.io` answers POSTs fine server-side but does
+ *  - Circle's primary RPC answers POSTs server-side but does
  *    NOT pass the browser CORS preflight, so it cannot be called from the client.
- *  - The provider mirrors (`rpc.<provider>.testnet.arc.io`) DO pass preflight, but
+ *  - Provider mirrors may pass preflight, but
  *    their third-party subdomains match ad-blocker / privacy filter lists
  *    (EasyPrivacy et al.), so real users' extensions kill the requests with
  *    net::ERR_BLOCKED_BY_CLIENT — the app then renders blank, flaky cards.
@@ -17,10 +17,10 @@
  * only one that 429s under bursts, so it sits last.
  */
 export const ARC_RPC_UPSTREAMS = [
-  "https://rpc.testnet.arc.io",
-  "https://rpc.blockdaemon.testnet.arc.io",
-  "https://rpc.drpc.testnet.arc.io",
-  "https://rpc.quicknode.testnet.arc.io",
+  "https://rpc.mainnet.arc.io",
+  "https://rpc.blockdaemon.mainnet.arc.io",
+  "https://rpc.drpc.mainnet.arc.io",
+  "https://rpc.quicknode.mainnet.arc.io",
 ] as const;
 
 /**

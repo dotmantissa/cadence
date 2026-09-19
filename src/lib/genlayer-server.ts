@@ -107,7 +107,7 @@ export async function fileGenLayerAppeal(
     functionName: "file_appeal_with_bant",
     args: [
       arc.caseId,
-      BigInt(arcTestnetChainId),
+      BigInt(arcMainnetChainId),
       arc.payrollAddress.toLowerCase(),
       arc.streamId,
       arc.cancellation.nonce,
@@ -128,7 +128,7 @@ export async function fileGenLayerAppeal(
   return String(hash);
 }
 
-const arcTestnetChainId = 5042002;
+const arcMainnetChainId = 5042;
 export async function adjudicateGenLayerAppeal(caseId: string) {
   const hash = await client().writeContract({
     address: address(),

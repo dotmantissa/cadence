@@ -5,7 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {PayrollManager} from "../src/PayrollManager.sol";
 
 contract DeployScript is Script {
-    // Arc testnet USDC system contract
+    // Arc Mainnet and Testnet share this USDC system contract address.
     address constant USDC_ARC = 0x3600000000000000000000000000000000000000;
 
     function run() public returns (PayrollManager payroll) {

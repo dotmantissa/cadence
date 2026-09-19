@@ -29,7 +29,7 @@ export default function Home() {
                 className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper/60 px-3.5 py-1.5 text-xs font-medium text-ink/70 backdrop-blur"
               >
                 <Radio size={13} className="text-volt" />
-                live on Arc Testnet
+                live on Arc Mainnet
               </motion.div>
 
               <motion.h1

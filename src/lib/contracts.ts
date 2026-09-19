@@ -3,13 +3,12 @@ export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as cons
 // The active deployment receives all new streams. The legacy address remains
 // configured while its existing escrowed streams are still being settled.
 export const PAYROLL_ADDRESS = (
-  process.env.NEXT_PUBLIC_PAYROLL_ADDRESS ?? ""
+  process.env.NEXT_PUBLIC_MAINNET_PAYROLL_ADDRESS ?? ""
 ) as `0x${string}`;
-export const LEGACY_PAYROLL_ADDRESS = (
-  process.env.NEXT_PUBLIC_LEGACY_PAYROLL_ADDRESS ?? ""
-) as `0x${string}`;
+// Testnet deployments must never be read or transacted against on Mainnet.
+export const LEGACY_PAYROLL_ADDRESS = "" as `0x${string}`;
 export const PAYROLL_ADDRESSES = Array.from(
-  new Set([PAYROLL_ADDRESS, LEGACY_PAYROLL_ADDRESS].filter(Boolean))
+  new Set([PAYROLL_ADDRESS].filter((address) => /^0x[0-9a-fA-F]{40}$/.test(address)))
 ) as `0x${string}`[];
 
 export const PAYROLL_ABI = [

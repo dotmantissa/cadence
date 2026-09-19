@@ -8,7 +8,7 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { arcTestnet } from "./chains";
+import { arcMainnet } from "./chains";
 import { ARC_RPC_UPSTREAMS } from "./rpc-endpoints";
 import { PAYROLL_ABI, PAYROLL_ADDRESS } from "./contracts";
 
@@ -18,7 +18,7 @@ const transport = fallback(
 );
 
 const publicClient = createPublicClient({
-  chain: arcTestnet,
+  chain: arcMainnet,
   transport,
 });
 const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
@@ -158,7 +158,7 @@ export async function relayArcVerdict(
   const account = adjudicatorAccount();
   const walletClient = createWalletClient({
     account,
-    chain: arcTestnet,
+    chain: arcMainnet,
     transport,
   });
   const configuredAdjudicator = await publicClient.readContract({

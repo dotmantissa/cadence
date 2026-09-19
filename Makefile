@@ -16,7 +16,7 @@ fmt:
 clean:
 	cd contracts && forge clean
 
-# Deploy PayrollManager to Arc testnet — requires funded USDC wallet
+# Deploy PayrollManager to Arc Mainnet - requires funded USDC wallet
 deploy:
 	cd contracts && PRIVATE_KEY=$(PRIVATE_KEY) forge script script/Deploy.s.sol \
 		--rpc-url $(ARC_RPC_URL) \
@@ -40,7 +40,7 @@ dev:
 
 # ── Utilities ────────────────────────────────────────────────────────────────
 
-# Check deployer USDC balance on Arc testnet
+# Check deployer USDC balance on Arc Mainnet
 balance:
 	@cast call $(USDC_ADDRESS) "balanceOf(address)(uint256)" \
 		$(DEPLOYER_ADDRESS) --rpc-url $(ARC_RPC_URL) | \

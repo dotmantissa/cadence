@@ -52,13 +52,13 @@ export function shortenAddress(addr: string): string {
 }
 
 /**
- * ArcScan link to the PayrollManager contract's on-chain state — the shareable
+ * Arc Explorer link to the PayrollManager contract's on-chain state — the shareable
  * proof that a stream exists and its terms. A stream isn't its own address, so
  * the contract page (where `streams(id)` can be read) is the canonical anchor;
  * we hash the stream id so a recipient lands with the right one in mind.
  */
 export function streamExplorerUrl(contractAddress: string, streamId: bigint): string {
-  return `https://testnet.arcscan.app/address/${contractAddress}#${streamId.toString()}`;
+  return `https://explorer.arc.io/address/${contractAddress}#${streamId.toString()}`;
 }
 
 /**

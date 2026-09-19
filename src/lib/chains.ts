@@ -1,9 +1,9 @@
 import { defineChain } from "viem";
 import { browserSafeRpcHttp } from "./rpc-endpoints";
 
-export const arcTestnet = defineChain({
-  id: 5042002,
-  name: "Arc Testnet",
+export const arcMainnet = defineChain({
+  id: 5042,
+  name: "Arc",
   nativeCurrency: {
     name: "USD Coin",
     symbol: "USDC",
@@ -20,15 +20,13 @@ export const arcTestnet = defineChain({
     // write path uses their own EIP-1193 provider and their own RPC setting.
     default: {
       http: browserSafeRpcHttp(),
-      webSocket: ["wss://rpc.drpc.testnet.arc.io"],
     },
     public: {
       http: browserSafeRpcHttp(),
-      webSocket: ["wss://rpc.drpc.testnet.arc.io"],
     },
   },
   blockExplorers: {
-    default: { name: "ArcScan", url: "https://testnet.arcscan.app" },
+    default: { name: "Arc Explorer", url: "https://explorer.arc.io" },
   },
   // Standard Multicall3 deployment. Lets viem/wagmi aggregate many view calls
   // into a single eth_call so a page full of stream cards resolves in one trip
@@ -38,5 +36,4 @@ export const arcTestnet = defineChain({
       address: "0xcA11bde05977b3631167028862bE2a173976CA11",
     },
   },
-  testnet: true,
 });

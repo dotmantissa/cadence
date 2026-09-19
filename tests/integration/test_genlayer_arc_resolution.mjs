@@ -27,8 +27,8 @@ const genlayerKey = required(
   process.env.GENLAYER_PRIVATE_KEY
 );
 const arcPayroll = required(
-  "ARC_PAYROLL_ADDRESS or NEXT_PUBLIC_PAYROLL_ADDRESS",
-  process.env.ARC_PAYROLL_ADDRESS ?? process.env.NEXT_PUBLIC_PAYROLL_ADDRESS
+  "ARC_PAYROLL_ADDRESS or NEXT_PUBLIC_MAINNET_PAYROLL_ADDRESS",
+  process.env.ARC_PAYROLL_ADDRESS ?? process.env.NEXT_PUBLIC_MAINNET_PAYROLL_ADDRESS
 );
 const arcKey = required(
   "ARC_ADJUDICATOR_PRIVATE_KEY or ADJUDICATOR_PRIVATE_KEY",
@@ -49,17 +49,17 @@ const gl = createClient({
 const arcAccount = privateKeyToAccount(arcKey);
 const arc = createPublicClient({
   chain: {
-    id: 5042002,
-    name: "Arc Testnet",
+    id: 5042,
+    name: "Arc",
     nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 18 },
-    rpcUrls: { default: { http: [process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc.io"] } },
+    rpcUrls: { default: { http: [process.env.ARC_RPC_URL ?? "https://rpc.mainnet.arc.io"] } },
   },
   transport: http(),
 });
 const wallet = createWalletClient({
   account: arcAccount,
   chain: arc.chain,
-  transport: http(process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc.io"),
+  transport: http(process.env.ARC_RPC_URL ?? "https://rpc.mainnet.arc.io"),
 });
 
 const payrollAbi = parseAbi([

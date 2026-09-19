@@ -62,7 +62,7 @@ Put together, the single-asset USDC model, sub-second finality, and stable fees 
 - **Wallet and onchain:** Privy for sign-in and embedded or external wallets, wired through wagmi v2 and viem.
 - **Data layer:** a Neon Postgres database via Drizzle ORM keeps off-chain conveniences like usernames, saved payees, notification email, and stream drafts. Nothing that moves money lives off-chain.
 - **Email:** Resend sends on-brand account notifications (sign-in, payment started, request received, counter offer, receipt) to anyone who links an address.
-- **App routes:** a same-origin RPC proxy keeps browser reads reliable, plus routes for identity resolution and one-click testnet funding.
+- **App routes:** a same-origin RPC proxy keeps browser reads reliable, plus routes for identity resolution.
 - **Hosting:** Vercel.
 
 ### GenLayer-to-Arc release test
@@ -76,7 +76,7 @@ window is closed:
 ```bash
 GENLAYER_CONTRACT_ADDRESS=0x... \
 GENLAYER_PRIVATE_KEY=0x... \
-NEXT_PUBLIC_PAYROLL_ADDRESS=0x... \
+NEXT_PUBLIC_MAINNET_PAYROLL_ADDRESS=0x... \
 ARC_ADJUDICATOR_PRIVATE_KEY=0x... \
 E2E_STREAM_ID=123 \
 npm run test:e2e:genlayer-arc

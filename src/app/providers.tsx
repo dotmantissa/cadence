@@ -4,7 +4,7 @@ import { PrivyProvider } from "@privy-io/react-auth";
 import { WagmiProvider } from "@privy-io/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { wagmiConfig } from "@/lib/wagmi";
-import { arcTestnet } from "@/lib/chains";
+import { arcMainnet } from "@/lib/chains";
 import { WalletOnboarding } from "@/components/WalletOnboarding";
 import { UsernameGate } from "@/components/UsernameGate";
 import { ProfileProvider } from "@/components/ProfileProvider";
@@ -37,10 +37,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         config={{
           // Connect an external wallet, or log in with email.
           loginMethods: ["wallet", "email"],
-          defaultChain: arcTestnet,
-          supportedChains: [arcTestnet],
-          // Coinbase Smart Wallet does NOT support Arc's custom chain 5042002, so
-          // its connector throws "not supported by Coinbase Smart Wallet: 5042002"
+          defaultChain: arcMainnet,
+          supportedChains: [arcMainnet],
+          // Coinbase Smart Wallet does not support Arc's custom chain, so
+          // its connector throws "not supported by Coinbase Smart Wallet"
           // and never initializes — leaving wagmi stuck at "3 of 4 connectors" past
           // its reconnect timeout. That hung connector makes useAccount()'s address
           // flap undefined↔defined, which churns every read hook's query key and

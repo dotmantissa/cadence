@@ -7,8 +7,10 @@ import {PayrollManager} from "../src/PayrollManager.sol";
 contract DeployScript is Script {
     // Arc Mainnet and Testnet share this USDC system contract address.
     address constant USDC_ARC = 0x3600000000000000000000000000000000000000;
+    uint256 constant ARC_MAINNET_CHAIN_ID = 5042;
 
     function run() public returns (PayrollManager payroll) {
+        require(block.chainid == ARC_MAINNET_CHAIN_ID, "wrong chain: Arc Mainnet required");
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
         address adjudicator = vm.envOr("ADJUDICATOR_ADDRESS", deployer);

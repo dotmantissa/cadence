@@ -183,6 +183,14 @@ contract PayrollManager is ReentrancyGuard {
         adjudicator = _adjudicator;
     }
 
+    function _transferFrom(address from, address to, uint256 amount) internal {
+        require(usdc.transferFrom(from, to, amount), "USDC transferFrom failed");
+    }
+
+    function _transfer(address to, uint256 amount) internal {
+        require(usdc.transfer(to, amount), "USDC transfer failed");
+    }
+
     /// @notice Employer creates a new payroll stream. Must pre-approve USDC transfer.
     /// @param employee The worker receiving the stream.
     /// @param ratePerSecond USDC per second (6 decimals). E.g. 1157407 ≈ $100/day.
@@ -199,7 +207,7 @@ contract PayrollManager is ReentrancyGuard {
         uint64 startAt
     ) external nonReentrant returns (uint256 streamId) {
         _validateTerms(employee, ratePerSecond, deposit);
-        usdc.transferFrom(msg.sender, address(this), deposit);
+        _transferFrom(msg.sender, address(this), deposit);
         streamId = _openStream(msg.sender, employee, ratePerSecond, deposit, invoiceRef, startAt, "");
     }
 
@@ -215,7 +223,7 @@ contract PayrollManager is ReentrancyGuard {
     ) external nonReentrant returns (uint256 streamId) {
         _validateTerms(employee, ratePerSecond, deposit);
         _validateDeliverables(streamDeliverables);
-        usdc.transferFrom(msg.sender, address(this), deposit);
+        _transferFrom(msg.sender, address(this), deposit);
         streamId = _openStream(msg.sender, employee, ratePerSecond, deposit, invoiceRef, startAt, streamDeliverables);
     }
 
@@ -257,7 +265,7 @@ contract PayrollManager is ReentrancyGuard {
         }
 
         // One transfer for the whole batch, then record each stream.
-        usdc.transferFrom(msg.sender, address(this), total);
+        _transferFrom(msg.sender, address(this), total);
 
         streamIds = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
@@ -290,7 +298,7 @@ contract PayrollManager is ReentrancyGuard {
             total += deposits[i];
         }
 
-        usdc.transferFrom(msg.sender, address(this), total);
+        _transferFrom(msg.sender, address(this), total);
         streamIds = _openStreamsWithDeliverables(
             msg.sender, employees, ratesPerSecond, deposits, invoiceRefs, streamDeliverables, startAt
         );
@@ -389,7 +397,7 @@ contract PayrollManager is ReentrancyGuard {
             s.active = false;
         }
 
-        usdc.transfer(s.employee, owed);
+        _transfer(s.employee, owed);
         emit Withdrawn(streamId, s.employee, owed);
     }
 
@@ -419,7 +427,7 @@ contract PayrollManager is ReentrancyGuard {
         require(amount > 0, "amount must be > 0");
         require(!_cancellationOpen(streamId), "cancellation pending");
 
-        usdc.transferFrom(msg.sender, address(this), amount);
+        _transferFrom(msg.sender, address(this), amount);
 
         uint64 nowT = uint64(block.timestamp);
 
@@ -494,7 +502,7 @@ contract PayrollManager is ReentrancyGuard {
         s.active = false;
         s.deposit = refund;
 
-        if (owed > 0) usdc.transfer(s.employee, owed);
+        if (owed > 0) _transfer(s.employee, owed);
 
         _openCancellation(streamId, owed, refund, reason);
     }
@@ -655,7 +663,7 @@ contract PayrollManager is ReentrancyGuard {
         refund = c.escrowedRefund;
         c.escrowedRefund = 0;
         s.deposit = 0;
-        if (refund > 0) usdc.transfer(s.employer, refund);
+        if (refund > 0) _transfer(s.employer, refund);
     }
 
     // ---- Stream requests + negotiation ----------------------------------
@@ -705,7 +713,7 @@ contract PayrollManager is ReentrancyGuard {
         require(r.status == ReqStatus.Pending, "not pending");
 
         r.status = ReqStatus.Accepted;
-        usdc.transferFrom(msg.sender, address(this), r.deposit);
+        _transferFrom(msg.sender, address(this), r.deposit);
         streamId = _openStream(r.payer, r.payee, r.ratePerSecond, r.deposit, r.invoiceRef, r.startAt, "");
         r.streamId = streamId;
 
@@ -731,7 +739,7 @@ contract PayrollManager is ReentrancyGuard {
         r.counterDeadline = uint64(block.timestamp) + COUNTER_WINDOW;
         r.status = ReqStatus.Countered;
 
-        usdc.transferFrom(msg.sender, address(this), newDeposit);
+        _transferFrom(msg.sender, address(this), newDeposit);
 
         emit RequestCountered(requestId, newRate, newDeposit, newStartAt, r.counterDeadline);
     }
@@ -761,7 +769,7 @@ contract PayrollManager is ReentrancyGuard {
         r.status = ReqStatus.Rejected;
         r.deposit = 0;
 
-        if (refund > 0) usdc.transfer(r.payer, refund);
+        if (refund > 0) _transfer(r.payer, refund);
 
         emit RequestRejected(requestId, msg.sender);
     }
@@ -778,7 +786,7 @@ contract PayrollManager is ReentrancyGuard {
         r.status = ReqStatus.Expired;
         r.deposit = 0;
 
-        if (refund > 0) usdc.transfer(r.payer, refund);
+        if (refund > 0) _transfer(r.payer, refund);
 
         emit RequestExpired(requestId, refund);
     }

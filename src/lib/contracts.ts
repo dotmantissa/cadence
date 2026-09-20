@@ -1,8 +1,9 @@
 export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
+export const MAINNET_PAYROLL_ADDRESS = "0x3C808A7909239EEDDb27dB04D4696C650D56d74C" as const;
 
 // The Mainnet deployment receives all new streams once its address is configured.
 export const PAYROLL_ADDRESS = (
-  process.env.NEXT_PUBLIC_MAINNET_PAYROLL_ADDRESS ?? ""
+  process.env.NEXT_PUBLIC_MAINNET_PAYROLL_ADDRESS ?? MAINNET_PAYROLL_ADDRESS
 ) as `0x${string}`;
 // There is intentionally no legacy deployment on the Mainnet build.
 export const LEGACY_PAYROLL_ADDRESS = "" as `0x${string}`;
@@ -17,6 +18,44 @@ export const PAYROLL_ABI = [
     inputs: [],
     outputs: [{ name: "", type: "address", internalType: "address" }],
     stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "owner",
+    inputs: [],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "protocolFeeRecipient",
+    inputs: [],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "protocolFeeBps",
+    inputs: [],
+    outputs: [{ name: "", type: "uint16", internalType: "uint16" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "protocolFee",
+    inputs: [{ name: "deposit", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "setProtocolFeeConfig",
+    inputs: [
+      { name: "recipient", type: "address", internalType: "address" },
+      { name: "feeBps", type: "uint16", internalType: "uint16" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
   },
   {
     type: "constructor",

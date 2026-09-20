@@ -9,6 +9,7 @@ import { Reveal } from "@/components/motion/Reveal";
 import { HowItFlows } from "@/components/landing/HowItFlows";
 import { AudienceSplit } from "@/components/landing/AudienceSplit";
 import { Footer } from "@/components/landing/Footer";
+import { ArcMainnetWelcome } from "@/components/ArcMainnetWelcome";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -20,6 +21,7 @@ export default function Home() {
       {/* HERO */}
       <section className="relative overflow-hidden pt-28 sm:pt-32">
         <div className="mx-auto max-w-7xl px-5 pb-16 sm:px-8 lg:pb-24">
+          <ArcMainnetWelcome />
           <div className="grid items-center gap-12 lg:grid-cols-[0.92fr_1.08fr]">
             <div>
               <motion.div

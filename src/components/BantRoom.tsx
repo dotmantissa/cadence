@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquare, Paperclip, Send, Loader2 } from "lucide-react";
+import { MessageSquare, Paperclip, Send, Loader2, Radio } from "lucide-react";
 import { useApi } from "@/hooks/useApi";
 import { useActiveAddress } from "@/hooks/useActiveAddress";
 import { APPEAL_SOURCE_TYPES, type AppealSourceType } from "@/lib/appeals";
@@ -48,6 +48,8 @@ export function BantRoom({ caseId, onClose, onCompleted }: Props) {
   const [participants, setParticipants] = useState<RoomParticipants | null>(null);
   const [closesAt, setClosesAt] = useState<string | null>(null);
   const [roomStatus, setRoomStatus] = useState<"loading" | "open" | "closed">("loading");
+  const [appealStatus, setAppealStatus] = useState<string | null>(null);
+  const [triggeringVerdict, setTriggeringVerdict] = useState(false);
   const [body, setBody] = useState("");
   const [evidenceUrl, setEvidenceUrl] = useState("");
   const [evidenceType, setEvidenceType] = useState<AppealSourceType>("other");
@@ -70,6 +72,8 @@ export function BantRoom({ caseId, onClose, onCompleted }: Props) {
       );
       setClosesAt(result.room?.closesAt ?? null);
       setRoomStatus(result.room ? result.room.status : "loading");
+      const appeal = await api.getCancellationAppeal(caseId);
+      setAppealStatus(appeal.appeal?.status ?? null);
       if (result.room?.status === "closed") onCompleted?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load the Bant room");
@@ -124,6 +128,21 @@ export function BantRoom({ caseId, onClose, onCompleted }: Props) {
       setError(err instanceof Error ? err.message : "Could not send the message");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function triggerVerdict() {
+    setTriggeringVerdict(true);
+    setError(null);
+    try {
+      const result = await api.triggerCancellationVerdict(caseId);
+      const nextStatus = result.appeal?.status ?? null;
+      setAppealStatus(nextStatus);
+      if (nextStatus === "complete") onCompleted?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start the GenLayer review");
+    } finally {
+      setTriggeringVerdict(false);
     }
   }
 
@@ -240,7 +259,31 @@ export function BantRoom({ caseId, onClose, onCompleted }: Props) {
             </button>
           </form>
         )}
-        {closed && <p className="border-t border-ink/10 pt-4 text-sm text-ink/55">The Bant transcript is closed and has been frozen for GenLayer review.</p>}
+        {closed && (
+          <div className="border-t border-ink/10 pt-4">
+            <p className="text-sm text-ink/55">
+              The Bant transcript is closed and frozen. Start the GenLayer review when you are ready;
+              the resulting verdict will be relayed to Arc for the appealed stream.
+            </p>
+            {appealStatus !== "complete" && appealStatus !== "adjudicating" && appealStatus !== "filed" && (
+              <button
+                type="button"
+                onClick={() => void triggerVerdict()}
+                disabled={triggeringVerdict}
+                className="mt-4 inline-flex items-center gap-2 bg-volt px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-volt-bright disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {triggeringVerdict ? <Loader2 size={15} className="animate-spin" /> : <Radio size={15} />}
+                {triggeringVerdict ? "Starting GenLayer review..." : "Review transcript with GenLayer"}
+              </button>
+            )}
+            {(appealStatus === "filed" || appealStatus === "adjudicating") && (
+              <p className="mt-3 text-xs text-ink/45">
+                GenLayer review is in progress. The background workflow will relay the verdict to Arc.
+              </p>
+            )}
+            {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+          </div>
+        )}
         {roomStatus === "loading" && <p className="text-sm text-ink/50">The room will appear as soon as the Arc appeal confirmation is indexed.</p>}
       </div>
     </Modal>

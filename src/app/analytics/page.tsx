@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import {
   Activity,
   AlertTriangle,
@@ -23,9 +24,13 @@ import { useProfileContext } from "@/components/ProfileProvider";
 import { isOfficialAdminEmail } from "@/lib/admin";
 import type { AnalyticsPayload } from "@/lib/admin-analytics";
 import { formatUsdc, shortenAddress } from "@/lib/utils";
+import { PAYROLL_ABI, PAYROLL_ADDRESS } from "@/lib/contracts";
+import { waitForSuccessfulReceipt } from "@/lib/tx";
 
 type AdminSettings = {
   feeRecipient: string | null;
+  feeBps: number;
+  owner: string;
   onchainRoutingActive: boolean;
 };
 
@@ -44,6 +49,15 @@ function activityLabel(type: string): string {
 export default function AnalyticsPage() {
   const { user, loading: profileLoading } = useProfileContext();
   const { api } = useApi();
+  const config = useConfig();
+  const { address: connectedAddress } = useAccount();
+  const { writeContractAsync } = useWriteContract();
+  const { data: onchainOwner } = useReadContract({
+    address: PAYROLL_ADDRESS,
+    abi: PAYROLL_ABI,
+    functionName: "owner",
+    query: { enabled: /^0x[0-9a-fA-F]{40}$/.test(PAYROLL_ADDRESS) },
+  });
   const isAdmin = isOfficialAdminEmail(user?.email);
   const [analytics, setAnalytics] = useState<AnalyticsPayload | null>(null);
   const [settings, setSettings] = useState<AdminSettings | null>(null);
@@ -51,6 +65,7 @@ export default function AnalyticsPage() {
     { id: string; action: string; metadata: Record<string, unknown>; createdAt: string }[]
   >([]);
   const [feeRecipient, setFeeRecipient] = useState("");
+  const [feeBps, setFeeBps] = useState("0");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +83,7 @@ export default function AnalyticsPage() {
       setAnalytics(analyticsResponse.analytics);
       setSettings(settingsResponse.settings);
       setFeeRecipient(settingsResponse.settings.feeRecipient ?? "");
+      setFeeBps(String(settingsResponse.settings.feeBps ?? 0));
       setAudit(settingsResponse.audit);
     } catch (cause) {
       setError(
@@ -89,13 +105,35 @@ export default function AnalyticsPage() {
     setSaved(false);
     setError(null);
     try {
+      const nextFeeBps = Number(feeBps);
+      if (!Number.isInteger(nextFeeBps) || nextFeeBps < 0 || nextFeeBps > 1000) {
+        throw new Error("Fee must be a whole number from 0 to 1000 basis points.");
+      }
+      const owner = String(onchainOwner ?? settings?.owner ?? "").toLowerCase();
+      if (!connectedAddress || !owner || connectedAddress.toLowerCase() !== owner) {
+        throw new Error("Connect the PayrollManager owner wallet to update protocol settings.");
+      }
+      const recipient = feeRecipient.trim() || "0x0000000000000000000000000000000000000000";
+      const hash = await writeContractAsync({
+        address: PAYROLL_ADDRESS,
+        abi: PAYROLL_ABI,
+        functionName: "setProtocolFeeConfig",
+        args: [recipient as `0x${string}`, nextFeeBps],
+        gas: 180_000n,
+        maxFeePerGas: 50_000_000_000n,
+        maxPriorityFeePerGas: 2_000_000_000n,
+      });
+      await waitForSuccessfulReceipt(config, hash);
       const response = await api.updateAdminSettings(feeRecipient.trim() || null);
-      setSettings(response.settings);
+      setSettings({ ...response.settings, feeBps: nextFeeBps, owner });
       setSaved(true);
       const refreshed = await api.getAdminSettings();
+      setSettings(refreshed.settings);
+      setFeeRecipient(refreshed.settings.feeRecipient ?? "");
+      setFeeBps(String(refreshed.settings.feeBps));
       setAudit(refreshed.audit);
-    } catch {
-      setError("The project address could not be saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The protocol settings could not be saved.");
     } finally {
       setSaving(false);
     }
@@ -217,8 +255,8 @@ export default function AnalyticsPage() {
                   <h2 className="text-xl font-semibold text-ink">Project controls</h2>
                 </div>
                 <p className="mt-2 text-sm leading-relaxed text-ink/55">
-                  Store the current project destination for fee configuration. On-chain routing stays
-                  off until the redeployed PayrollManager exposes an enforced fee setter.
+                  Protocol fees are taken from each stream opening and routed on-chain to this
+                  recipient. The fee is deducted from the initial stream deposit.
                 </p>
                 <label className="mt-5 block text-xs font-medium uppercase tracking-widest text-ink/45">
                   Project address
@@ -230,6 +268,21 @@ export default function AnalyticsPage() {
                     className="mt-2 w-full border border-ink/10 bg-paper px-3 py-3 font-mono text-sm text-ink outline-none focus:border-volt"
                   />
                 </label>
+                <label className="mt-4 block text-xs font-medium uppercase tracking-widest text-ink/45">
+                  Protocol fee
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      value={feeBps}
+                      onChange={(event) => setFeeBps(event.target.value)}
+                      inputMode="numeric"
+                      min="0"
+                      max="1000"
+                      type="number"
+                      className="w-28 border border-ink/10 bg-paper px-3 py-3 font-mono text-sm text-ink outline-none focus:border-volt"
+                    />
+                    <span className="text-xs normal-case tracking-normal text-ink/45">basis points (max 10%)</span>
+                  </div>
+                </label>
                 <button
                   onClick={() => void saveSettings()}
                   disabled={saving}
@@ -238,10 +291,12 @@ export default function AnalyticsPage() {
                   <Save size={15} /> {saving ? "Saving..." : "Save destination"}
                 </button>
                 {saved && <p className="mt-3 text-xs text-emerald-600">Saved to the control-room configuration.</p>}
-                {settings && !settings.onchainRoutingActive && (
+                {settings && (
                   <p className="mt-3 flex items-start gap-2 text-xs text-amber-700">
                     <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                    This does not move funds yet. Contract support is pending.
+                    {settings.onchainRoutingActive
+                      ? `Live on-chain routing: ${settings.feeBps} bps.`
+                      : "Routing is configured on-chain but currently set to 0 bps."}
                   </p>
                 )}
               </section>

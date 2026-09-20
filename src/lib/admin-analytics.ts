@@ -10,13 +10,14 @@ import {
 } from "viem";
 import { arcMainnet } from "./chains";
 import { ARC_RPC_UPSTREAMS } from "./rpc-endpoints";
-import { PAYROLL_ADDRESS, USDC_ADDRESS } from "./contracts";
+import { PAYROLL_ABI, PAYROLL_ADDRESS, USDC_ADDRESS } from "./contracts";
 
 const transport = fallback(ARC_RPC_UPSTREAMS.map((url) => http(url)), { rank: false });
 const client = createPublicClient({ chain: arcMainnet, transport });
 const MAX_LOGS = 5_000;
 const SCAN_WINDOW = 100_000n;
 const CHUNK_SIZE = 25_000n;
+const DEFAULT_PAYROLL_DEPLOYMENT_BLOCK = 21840316n;
 
 const events = {
   streamCreated: parseAbiItem(
@@ -102,6 +103,12 @@ export type AnalyticsActivity = {
   timestamp: string;
 };
 
+export type ProtocolFeeConfig = {
+  owner: string;
+  feeRecipient: string;
+  feeBps: number;
+};
+
 function asAddress(value: unknown): string | null {
   return typeof value === "string" && isAddress(value) ? value.toLowerCase() : null;
 }
@@ -133,7 +140,8 @@ async function getEventLogs(
 
 async function scanLogs(latestBlock: bigint) {
   const configured = process.env.ARC_PAYROLL_DEPLOYMENT_BLOCK;
-  const configuredBlock = configured && /^\d+$/.test(configured) ? BigInt(configured) : null;
+  const configuredBlock =
+    configured && /^\d+$/.test(configured) ? BigInt(configured) : DEFAULT_PAYROLL_DEPLOYMENT_BLOCK;
   const fromBlock = configuredBlock ?? (latestBlock > SCAN_WINDOW ? latestBlock - SCAN_WINDOW : 0n);
   const chunks: { from: bigint; to: bigint }[] = [];
   for (let from = fromBlock; from <= latestBlock; from += CHUNK_SIZE) {
@@ -159,7 +167,7 @@ async function scanLogs(latestBlock: bigint) {
   if (total > MAX_LOGS) {
     throw new Error("analytics event volume exceeds the configured safety limit");
   }
-  return { grouped, fromBlock, complete: configuredBlock !== null };
+  return { grouped, fromBlock, complete: true };
 }
 
 function logSort(a: EventLog, b: EventLog) {
@@ -342,5 +350,33 @@ export async function getAdminAnalytics() {
       requests: (grouped.get("requestCreated") ?? []).length,
     },
     activity: activity.slice(0, 60),
+  };
+}
+
+export async function getProtocolFeeConfig(): Promise<ProtocolFeeConfig> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(PAYROLL_ADDRESS)) {
+    throw new Error("Mainnet PayrollManager address is not configured");
+  }
+  const [owner, feeRecipient, feeBps] = await Promise.all([
+    client.readContract({
+      address: PAYROLL_ADDRESS as Address,
+      abi: PAYROLL_ABI,
+      functionName: "owner",
+    }),
+    client.readContract({
+      address: PAYROLL_ADDRESS as Address,
+      abi: PAYROLL_ABI,
+      functionName: "protocolFeeRecipient",
+    }),
+    client.readContract({
+      address: PAYROLL_ADDRESS as Address,
+      abi: PAYROLL_ABI,
+      functionName: "protocolFeeBps",
+    }),
+  ]);
+  return {
+    owner: owner as string,
+    feeRecipient: feeRecipient as string,
+    feeBps: Number(feeBps),
   };
 }

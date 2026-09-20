@@ -97,6 +97,31 @@ contract PayrollManagerTest is Test {
         assertTrue(active);
     }
 
+    function test_ProtocolFee_IsRoutedAndRemovedFromEscrow() public {
+        vm.prank(address(this));
+        payroll.setProtocolFeeConfig(address(0xFEE), 100);
+
+        uint256 employerBefore = usdc.balanceOf(employer);
+        vm.prank(employer);
+        uint256 id = payroll.createStream(employee, RATE, DEPOSIT, "INV-FEE", 0);
+
+        uint256 fee = payroll.protocolFee(DEPOSIT);
+        assertEq(fee, 36e6);
+        assertEq(usdc.balanceOf(address(0xFEE)), fee);
+        assertEq(usdc.balanceOf(employer), employerBefore - DEPOSIT);
+        (,,,,, uint128 remaining,,,,) = payroll.streams(id);
+        assertEq(remaining, DEPOSIT - fee);
+    }
+
+    function test_ProtocolFeeConfig_IsOwnerOnlyAndBounded() public {
+        vm.prank(employer);
+        vm.expectRevert("not owner");
+        payroll.setProtocolFeeConfig(address(0xFEE), 100);
+
+        vm.expectRevert("fee too high");
+        payroll.setProtocolFeeConfig(address(0xFEE), 1001);
+    }
+
     function test_CreateStreamWithDeliverables_StoresExpectations() public {
         vm.prank(employer);
         uint256 id = payroll.createStreamWithDeliverables(

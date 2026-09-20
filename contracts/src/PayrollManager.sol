@@ -116,6 +116,11 @@ contract PayrollManager is ReentrancyGuard {
 
     uint256 public nextRequestId;
 
+    uint16 public constant MAX_PROTOCOL_FEE_BPS = 1000;
+    address public owner;
+    address public protocolFeeRecipient;
+    uint16 public protocolFeeBps;
+
     event StreamCreated(
         uint256 indexed streamId,
         address indexed employer,
@@ -175,12 +180,20 @@ contract PayrollManager is ReentrancyGuard {
     event RequestRejected(uint256 indexed requestId, address indexed by);
     event RequestCancelled(uint256 indexed requestId, address indexed by);
     event RequestExpired(uint256 indexed requestId, uint128 refunded);
+    event ProtocolFeeConfigUpdated(address indexed recipient, uint16 feeBps);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "not owner");
+        _;
+    }
 
     constructor(address _usdc, address _adjudicator) {
         require(_usdc != address(0), "invalid usdc");
         require(_adjudicator != address(0), "invalid adjudicator");
         usdc = IERC20(_usdc);
         adjudicator = _adjudicator;
+        owner = msg.sender;
+        protocolFeeRecipient = msg.sender;
     }
 
     function _transferFrom(address from, address to, uint256 amount) internal {
@@ -189,6 +202,28 @@ contract PayrollManager is ReentrancyGuard {
 
     function _transfer(address to, uint256 amount) internal {
         require(usdc.transfer(to, amount), "USDC transfer failed");
+    }
+
+    function protocolFee(uint256 deposit) public view returns (uint256) {
+        if (protocolFeeBps == 0 || deposit == 0) return 0;
+        return (deposit * protocolFeeBps + 9999) / 10000;
+    }
+
+    function setProtocolFeeConfig(address recipient, uint16 feeBps) external onlyOwner {
+        require(feeBps <= MAX_PROTOCOL_FEE_BPS, "fee too high");
+        require(recipient != address(0) || feeBps == 0, "invalid fee recipient");
+        protocolFeeRecipient = recipient;
+        protocolFeeBps = feeBps;
+        emit ProtocolFeeConfigUpdated(recipient, feeBps);
+    }
+
+    function _collectStreamFunding(address payer, uint256 deposit) internal returns (uint128 escrow) {
+        uint256 fee = protocolFee(deposit);
+        require(deposit > fee, "fee exceeds deposit");
+        escrow = uint128(deposit - fee);
+        require(escrow >= 1, "deposit too small after fee");
+        _transferFrom(payer, address(this), deposit);
+        if (fee > 0) _transfer(protocolFeeRecipient, fee);
     }
 
     /// @notice Employer creates a new payroll stream. Must pre-approve USDC transfer.
@@ -207,8 +242,9 @@ contract PayrollManager is ReentrancyGuard {
         uint64 startAt
     ) external nonReentrant returns (uint256 streamId) {
         _validateTerms(employee, ratePerSecond, deposit);
-        _transferFrom(msg.sender, address(this), deposit);
-        streamId = _openStream(msg.sender, employee, ratePerSecond, deposit, invoiceRef, startAt, "");
+        uint128 escrow = _collectStreamFunding(msg.sender, deposit);
+        require(escrow >= ratePerSecond, "deposit < 1 second of pay");
+        streamId = _openStream(msg.sender, employee, ratePerSecond, escrow, invoiceRef, startAt, "");
     }
 
     /// @notice Employer creates a stream with explicit deliverables. The text is
@@ -223,8 +259,9 @@ contract PayrollManager is ReentrancyGuard {
     ) external nonReentrant returns (uint256 streamId) {
         _validateTerms(employee, ratePerSecond, deposit);
         _validateDeliverables(streamDeliverables);
-        _transferFrom(msg.sender, address(this), deposit);
-        streamId = _openStream(msg.sender, employee, ratePerSecond, deposit, invoiceRef, startAt, streamDeliverables);
+        uint128 escrow = _collectStreamFunding(msg.sender, deposit);
+        require(escrow >= ratePerSecond, "deposit < 1 second of pay");
+        streamId = _openStream(msg.sender, employee, ratePerSecond, escrow, invoiceRef, startAt, streamDeliverables);
     }
 
     /// @notice Open many payroll streams in a single transaction. The caller is
@@ -259,18 +296,30 @@ contract PayrollManager is ReentrancyGuard {
         // Validate every row and total the escrow BEFORE moving any funds, so an
         // invalid entry reverts the batch without a wasted transfer.
         uint256 total;
+        uint256 totalFee;
         for (uint256 i = 0; i < n; i++) {
             _validateTerms(employees[i], ratesPerSecond[i], deposits[i]);
+            require(deposits[i] - protocolFee(deposits[i]) >= ratesPerSecond[i], "deposit < 1 second of pay");
             total += deposits[i];
+            totalFee += protocolFee(deposits[i]);
         }
 
         // One transfer for the whole batch, then record each stream.
         _transferFrom(msg.sender, address(this), total);
+        if (totalFee > 0) _transfer(protocolFeeRecipient, totalFee);
 
         streamIds = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
             streamIds[i] =
-                _openStream(msg.sender, employees[i], ratesPerSecond[i], deposits[i], invoiceRefs[i], startAt, "");
+                _openStream(
+                    msg.sender,
+                    employees[i],
+                    ratesPerSecond[i],
+                    uint128(deposits[i] - protocolFee(deposits[i])),
+                    invoiceRefs[i],
+                    startAt,
+                    ""
+                );
         }
     }
 
@@ -292,13 +341,17 @@ contract PayrollManager is ReentrancyGuard {
         );
 
         uint256 total;
+        uint256 totalFee;
         for (uint256 i = 0; i < n; i++) {
             _validateTerms(employees[i], ratesPerSecond[i], deposits[i]);
             _validateDeliverables(streamDeliverables[i]);
+            require(deposits[i] - protocolFee(deposits[i]) >= ratesPerSecond[i], "deposit < 1 second of pay");
             total += deposits[i];
+            totalFee += protocolFee(deposits[i]);
         }
 
         _transferFrom(msg.sender, address(this), total);
+        if (totalFee > 0) _transfer(protocolFeeRecipient, totalFee);
         streamIds = _openStreamsWithDeliverables(
             msg.sender, employees, ratesPerSecond, deposits, invoiceRefs, streamDeliverables, startAt
         );
@@ -317,7 +370,13 @@ contract PayrollManager is ReentrancyGuard {
         streamIds = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
             streamIds[i] = _openStream(
-                employer, employees[i], ratesPerSecond[i], deposits[i], invoiceRefs[i], startAt, streamDeliverables[i]
+                employer,
+                employees[i],
+                ratesPerSecond[i],
+                uint128(deposits[i] - protocolFee(deposits[i])),
+                invoiceRefs[i],
+                startAt,
+                streamDeliverables[i]
             );
         }
     }
@@ -713,8 +772,9 @@ contract PayrollManager is ReentrancyGuard {
         require(r.status == ReqStatus.Pending, "not pending");
 
         r.status = ReqStatus.Accepted;
-        _transferFrom(msg.sender, address(this), r.deposit);
-        streamId = _openStream(r.payer, r.payee, r.ratePerSecond, r.deposit, r.invoiceRef, r.startAt, "");
+        uint128 escrow = _collectStreamFunding(msg.sender, r.deposit);
+        require(escrow >= r.ratePerSecond, "deposit < 1 second of pay");
+        streamId = _openStream(r.payer, r.payee, r.ratePerSecond, escrow, r.invoiceRef, r.startAt, "");
         r.streamId = streamId;
 
         emit RequestAccepted(requestId, streamId);
@@ -738,7 +798,6 @@ contract PayrollManager is ReentrancyGuard {
         r.startAt = newStartAt;
         r.counterDeadline = uint64(block.timestamp) + COUNTER_WINDOW;
         r.status = ReqStatus.Countered;
-
         _transferFrom(msg.sender, address(this), newDeposit);
 
         emit RequestCountered(requestId, newRate, newDeposit, newStartAt, r.counterDeadline);
@@ -753,7 +812,11 @@ contract PayrollManager is ReentrancyGuard {
         require(block.timestamp <= r.counterDeadline, "counter expired");
 
         r.status = ReqStatus.Accepted;
-        streamId = _openStream(r.payer, r.payee, r.ratePerSecond, r.deposit, r.invoiceRef, r.startAt, "");
+        uint128 fee = uint128(protocolFee(r.deposit));
+        if (fee > 0) _transfer(protocolFeeRecipient, fee);
+        uint128 escrow = r.deposit - fee;
+        require(escrow >= r.ratePerSecond, "deposit < 1 second of pay");
+        streamId = _openStream(r.payer, r.payee, r.ratePerSecond, escrow, r.invoiceRef, r.startAt, "");
         r.streamId = streamId;
 
         emit RequestAccepted(requestId, streamId);

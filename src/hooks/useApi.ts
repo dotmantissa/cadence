@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import type { Payee, StreamDraft, User } from "@/db/schema";
 import type { AppealSourceType } from "@/lib/appeals";
@@ -60,7 +60,7 @@ export function useApi() {
     [getAccessToken]
   );
 
-  const api = {
+  const api = useMemo(() => ({
     getMe: () => request<{ user: User }>("/api/me"),
     updateProfile: (patch: {
       displayName?: string | null;
@@ -153,6 +153,20 @@ export function useApi() {
         } | null;
       }>(`/api/appeals/${encodeURIComponent(caseId)}`),
     advanceCancellationAppeal: (caseId: string) =>
+      request<{
+        appeal: {
+          caseId: string;
+          streamId: string;
+          status: string;
+          fileTxHash: string | null;
+          adjudicationTxHash: string | null;
+          relayTxHash: string | null;
+          verdict: Record<string, unknown> | null;
+          lastError: string | null;
+          updatedAt: string;
+        } | null;
+      }>(`/api/appeals/${encodeURIComponent(caseId)}`, { method: "POST" }),
+    triggerCancellationVerdict: (caseId: string) =>
       request<{
         appeal: {
           caseId: string;
@@ -272,15 +286,20 @@ export function useApi() {
       ),
     getAdminSettings: () =>
       request<{
-        settings: { feeRecipient: string | null; onchainRoutingActive: boolean };
+        settings: {
+          feeRecipient: string | null;
+          feeBps: number;
+          owner: string;
+          onchainRoutingActive: boolean;
+        };
         audit: { id: string; action: string; metadata: Record<string, unknown>; createdAt: string }[];
       }>("/api/admin/settings"),
     updateAdminSettings: (feeRecipient: string | null) =>
-      request<{ settings: { feeRecipient: string | null; onchainRoutingActive: boolean } }>(
+      request<{ settings: { feeRecipient: string | null; feeBps: number; owner: string; onchainRoutingActive: boolean } }>(
         "/api/admin/settings",
         { method: "PATCH", body: JSON.stringify({ feeRecipient }) }
       ),
-  };
+  }), [request]);
 
   return { ready, authenticated, api };
 }

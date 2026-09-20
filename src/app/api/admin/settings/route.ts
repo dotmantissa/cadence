@@ -7,6 +7,7 @@ import {
   listAdminAuditLogs,
   setProjectFeeRecipient,
 } from "@/db/queries";
+import { getProtocolFeeConfig } from "@/lib/admin-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,9 +15,18 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const gate = await requireAdmin(req);
   if ("response" in gate) return gate.response;
-  const [settings, audit] = await Promise.all([getProjectSettings(), listAdminAuditLogs()]);
+  const [settings, audit, onchain] = await Promise.all([
+    getProjectSettings(),
+    listAdminAuditLogs(),
+    getProtocolFeeConfig(),
+  ]);
   return NextResponse.json({
-    settings: { feeRecipient: settings?.feeRecipient ?? null, onchainRoutingActive: false },
+    settings: {
+      feeRecipient: onchain.feeRecipient ?? settings?.feeRecipient ?? null,
+      feeBps: onchain.feeBps,
+      owner: onchain.owner,
+      onchainRoutingActive: onchain.feeBps > 0,
+    },
     audit,
   });
 }
@@ -43,6 +53,11 @@ export async function PATCH(req: Request) {
     onchainRoutingActive: false,
   });
   return NextResponse.json({
-    settings: { feeRecipient: settings.feeRecipient, onchainRoutingActive: false },
+    settings: {
+      feeRecipient: settings.feeRecipient,
+      feeBps: 0,
+      owner: "",
+      onchainRoutingActive: false,
+    },
   });
 }

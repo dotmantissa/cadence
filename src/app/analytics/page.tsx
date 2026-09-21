@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
+import { useConfig, useReadContract } from "wagmi";
+import { useWallets, type ConnectedWallet } from "@privy-io/react-auth";
+import { createWalletClient, custom, isAddress } from "viem";
 import {
   Activity,
   AlertTriangle,
@@ -26,6 +28,7 @@ import type { AnalyticsPayload } from "@/lib/admin-analytics";
 import { formatUsdc, shortenAddress } from "@/lib/utils";
 import { PAYROLL_ABI, PAYROLL_ADDRESS } from "@/lib/contracts";
 import { waitForSuccessfulReceipt } from "@/lib/tx";
+import { arcMainnet } from "@/lib/chains";
 
 type AdminSettings = {
   feeRecipient: string | null;
@@ -50,8 +53,7 @@ export default function AnalyticsPage() {
   const { user, loading: profileLoading } = useProfileContext();
   const { api } = useApi();
   const config = useConfig();
-  const { address: connectedAddress } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { wallets } = useWallets();
   const { data: onchainOwner } = useReadContract({
     address: PAYROLL_ADDRESS,
     abi: PAYROLL_ABI,
@@ -68,32 +70,56 @@ export default function AnalyticsPage() {
   const [feeBps, setFeeBps] = useState("0");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const embeddedWallet = useMemo(
+    () =>
+      wallets.find(
+        (wallet) =>
+          wallet.type === "ethereum" &&
+          wallet.walletClientType === "privy" &&
+          wallet.connectorType === "embedded" &&
+          !wallet.imported
+      ),
+    [wallets]
+  );
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
     setLoading(true);
-    setError(null);
-    try {
-      const [analyticsResponse, settingsResponse] = await Promise.all([
-        api.getAdminAnalytics(),
-        api.getAdminSettings(),
-      ]);
-      setAnalytics(analyticsResponse.analytics);
-      setSettings(settingsResponse.settings);
-      setFeeRecipient(settingsResponse.settings.feeRecipient ?? "");
-      setFeeBps(String(settingsResponse.settings.feeBps ?? 0));
-      setAudit(settingsResponse.audit);
-    } catch (cause) {
-      setError(
-        cause instanceof ApiError && cause.status === 404
+    setAnalyticsError(null);
+    setSettingsError(null);
+
+    const [analyticsResult, settingsResult] = await Promise.allSettled([
+      api.getAdminAnalytics(),
+      api.getAdminSettings(),
+    ]);
+
+    if (analyticsResult.status === "fulfilled") {
+      setAnalytics(analyticsResult.value.analytics);
+    } else {
+      setAnalyticsError(
+        analyticsResult.reason instanceof ApiError && analyticsResult.reason.status === 404
           ? "Control room unavailable."
-          : "Could not load the control room."
+          : "Analytics are temporarily unavailable."
       );
-    } finally {
-      setLoading(false);
     }
+
+    if (settingsResult.status === "fulfilled") {
+      setSettings(settingsResult.value.settings);
+      setFeeRecipient(settingsResult.value.settings.feeRecipient ?? "");
+      setFeeBps(String(settingsResult.value.settings.feeBps ?? 0));
+      setAudit(settingsResult.value.audit);
+    } else {
+      setSettingsError(
+        settingsResult.reason instanceof ApiError && settingsResult.reason.status === 404
+          ? "Protocol controls unavailable."
+          : "Could not load protocol controls. Check the production Privy and Arc configuration."
+      );
+    }
+    setLoading(false);
   }, [api, isAdmin]);
 
   useEffect(() => {
@@ -103,22 +129,38 @@ export default function AnalyticsPage() {
   const saveSettings = async () => {
     setSaving(true);
     setSaved(false);
-    setError(null);
+    setSettingsError(null);
     try {
       const nextFeeBps = Number(feeBps);
       if (!Number.isInteger(nextFeeBps) || nextFeeBps < 0 || nextFeeBps > 1000) {
         throw new Error("Fee must be a whole number from 0 to 1000 basis points.");
       }
       const owner = String(onchainOwner ?? settings?.owner ?? "").toLowerCase();
-      if (!connectedAddress || !owner || connectedAddress.toLowerCase() !== owner) {
-        throw new Error("Connect the PayrollManager owner wallet to update protocol settings.");
+      if (!embeddedWallet) {
+        throw new Error(
+          "The embedded wallet for cadenceonarc@gmail.com is not available. Reconnect the official account."
+        );
+      }
+      if (!owner || embeddedWallet.address.toLowerCase() !== owner) {
+        throw new Error(
+          "The official embedded wallet is not the PayrollManager owner. Transfer contract ownership to it before changing protocol settings."
+        );
       }
       const recipient = feeRecipient.trim() || "0x0000000000000000000000000000000000000000";
-      const hash = await writeContractAsync({
+      if (!isAddress(recipient)) {
+        throw new Error("Enter a valid EVM address for the fee recipient.");
+      }
+      const provider = await embeddedWallet.getEthereumProvider();
+      const walletClient = createWalletClient({
+        account: embeddedWallet.address as `0x${string}`,
+        chain: arcMainnet,
+        transport: custom(provider),
+      });
+      const hash = await walletClient.writeContract({
         address: PAYROLL_ADDRESS,
         abi: PAYROLL_ABI,
         functionName: "setProtocolFeeConfig",
-        args: [recipient as `0x${string}`, nextFeeBps],
+        args: [recipient, nextFeeBps],
         gas: 180_000n,
         maxFeePerGas: 50_000_000_000n,
         maxPriorityFeePerGas: 2_000_000_000n,
@@ -133,7 +175,9 @@ export default function AnalyticsPage() {
       setFeeBps(String(refreshed.settings.feeBps));
       setAudit(refreshed.audit);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The protocol settings could not be saved.");
+      setSettingsError(
+        cause instanceof Error ? cause.message : "The protocol settings could not be saved."
+      );
     } finally {
       setSaving(false);
     }
@@ -188,10 +232,30 @@ export default function AnalyticsPage() {
           </button>
         </div>
 
-        {error && (
+        {analyticsError && (
           <div className="mt-8 flex items-center gap-3 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <AlertTriangle size={16} /> {error}
+            <AlertTriangle size={16} /> {analyticsError}
           </div>
+        )}
+
+        {settingsError && (
+          <div className="mt-8 flex items-center gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <AlertTriangle size={16} /> {settingsError}
+          </div>
+        )}
+
+        {settings && (
+          <ProtocolControls
+            feeRecipient={feeRecipient}
+            feeBps={feeBps}
+            settings={settings}
+            embeddedWallet={embeddedWallet}
+            saving={saving}
+            saved={saved}
+            onFeeRecipientChange={setFeeRecipient}
+            onFeeBpsChange={setFeeBps}
+            onSave={() => void saveSettings()}
+          />
         )}
 
         {analytics && (
@@ -222,7 +286,7 @@ export default function AnalyticsPage() {
               })}
             </div>
 
-            <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
+            <div className="mt-8">
               <section className="border border-ink/10 bg-panel p-6 text-panel-foreground">
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -249,57 +313,6 @@ export default function AnalyticsPage() {
                 </a>
               </section>
 
-              <section className="border border-ink/10 bg-paper-warm p-6">
-                <div className="flex items-center gap-2">
-                  <Settings2 size={17} className="text-volt" />
-                  <h2 className="text-xl font-semibold text-ink">Project controls</h2>
-                </div>
-                <p className="mt-2 text-sm leading-relaxed text-ink/55">
-                  Protocol fees are taken from each stream opening and routed on-chain to this
-                  recipient. The fee is deducted from the initial stream deposit.
-                </p>
-                <label className="mt-5 block text-xs font-medium uppercase tracking-widest text-ink/45">
-                  Project address
-                  <input
-                    value={feeRecipient}
-                    onChange={(event) => setFeeRecipient(event.target.value)}
-                    placeholder="0x..."
-                    spellCheck={false}
-                    className="mt-2 w-full border border-ink/10 bg-paper px-3 py-3 font-mono text-sm text-ink outline-none focus:border-volt"
-                  />
-                </label>
-                <label className="mt-4 block text-xs font-medium uppercase tracking-widest text-ink/45">
-                  Protocol fee
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      value={feeBps}
-                      onChange={(event) => setFeeBps(event.target.value)}
-                      inputMode="numeric"
-                      min="0"
-                      max="1000"
-                      type="number"
-                      className="w-28 border border-ink/10 bg-paper px-3 py-3 font-mono text-sm text-ink outline-none focus:border-volt"
-                    />
-                    <span className="text-xs normal-case tracking-normal text-ink/45">basis points (max 10%)</span>
-                  </div>
-                </label>
-                <button
-                  onClick={() => void saveSettings()}
-                  disabled={saving}
-                  className="mt-4 inline-flex items-center gap-2 bg-volt px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-volt-bright disabled:opacity-50"
-                >
-                  <Save size={15} /> {saving ? "Saving..." : "Save destination"}
-                </button>
-                {saved && <p className="mt-3 text-xs text-emerald-600">Saved to the control-room configuration.</p>}
-                {settings && (
-                  <p className="mt-3 flex items-start gap-2 text-xs text-amber-700">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                    {settings.onchainRoutingActive
-                      ? `Live on-chain routing: ${settings.feeBps} bps.`
-                      : "Routing is configured on-chain but currently set to 0 bps."}
-                  </p>
-                )}
-              </section>
             </div>
 
             <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
@@ -364,7 +377,7 @@ export default function AnalyticsPage() {
           </>
         )}
 
-        {!analytics && !loading && (
+        {!analytics && !loading && !settings && (
           <div className="mt-12 border border-dashed border-ink/15 bg-paper-warm p-12 text-center">
             <Database size={22} className="mx-auto text-ink/35" />
             <p className="mt-3 text-sm text-ink/55">No Mainnet analytics available yet.</p>
@@ -372,6 +385,105 @@ export default function AnalyticsPage() {
         )}
       </main>
     </div>
+  );
+}
+
+function ProtocolControls({
+  feeRecipient,
+  feeBps,
+  settings,
+  embeddedWallet,
+  saving,
+  saved,
+  onFeeRecipientChange,
+  onFeeBpsChange,
+  onSave,
+}: {
+  feeRecipient: string;
+  feeBps: string;
+  settings: AdminSettings;
+  embeddedWallet?: ConnectedWallet;
+  saving: boolean;
+  saved: boolean;
+  onFeeRecipientChange: (value: string) => void;
+  onFeeBpsChange: (value: string) => void;
+  onSave: () => void;
+}) {
+  const signerMatchesOwner =
+    !!embeddedWallet &&
+    !!settings.owner &&
+    embeddedWallet.address.toLowerCase() === settings.owner.toLowerCase();
+
+  return (
+    <section className="mt-8 border border-ink/10 bg-paper-warm p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Settings2 size={17} className="text-volt" />
+          <h2 className="text-xl font-semibold text-ink">Fee recipient controls</h2>
+        </div>
+        <span className="font-mono text-xs text-ink/45">PayrollManager owner authorization</span>
+      </div>
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink/55">
+        This address receives protocol fees from new streams. The transaction is signed by the
+        embedded wallet belonging to cadenceonarc@gmail.com.
+      </p>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_auto]">
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-widest text-ink/45">
+            Fee recipient address
+            <input
+              value={feeRecipient}
+              onChange={(event) => onFeeRecipientChange(event.target.value)}
+              placeholder="0x..."
+              spellCheck={false}
+              className="mt-2 w-full border border-ink/10 bg-paper px-3 py-3 font-mono text-sm text-ink outline-none focus:border-volt"
+            />
+          </label>
+          <label className="mt-4 block text-xs font-medium uppercase tracking-widest text-ink/45">
+            Protocol fee
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                value={feeBps}
+                onChange={(event) => onFeeBpsChange(event.target.value)}
+                inputMode="numeric"
+                min="0"
+                max="1000"
+                type="number"
+                className="w-28 border border-ink/10 bg-paper px-3 py-3 font-mono text-sm text-ink outline-none focus:border-volt"
+              />
+              <span className="text-xs normal-case tracking-normal text-ink/45">
+                basis points (max 10%)
+              </span>
+            </div>
+          </label>
+        </div>
+        <div className="min-w-64 border-l border-ink/10 pl-5 text-sm">
+          <p className="text-xs uppercase tracking-widest text-ink/45">Authorized signer</p>
+          <p className="mt-2 font-mono text-xs text-ink/70">
+            {embeddedWallet ? shortenAddress(embeddedWallet.address) : "embedded wallet unavailable"}
+          </p>
+          <p className={signerMatchesOwner ? "mt-2 text-xs text-emerald-700" : "mt-2 text-xs text-amber-700"}>
+            {signerMatchesOwner
+              ? "Matches PayrollManager owner"
+              : "Must match PayrollManager owner before saving"}
+          </p>
+          <button
+            onClick={onSave}
+            disabled={saving || !signerMatchesOwner}
+            className="mt-5 inline-flex items-center gap-2 bg-volt px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-volt-bright disabled:opacity-50"
+          >
+            <Save size={15} /> {saving ? "Saving..." : "Authorize recipient"}
+          </button>
+        </div>
+      </div>
+      {saved && <p className="mt-3 text-xs text-emerald-600">On-chain fee routing updated.</p>}
+      <p className="mt-3 flex items-start gap-2 text-xs text-amber-700">
+        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+        {settings.onchainRoutingActive
+          ? `Live on-chain routing: ${settings.feeBps} bps.`
+          : "Routing is configured on-chain but currently set to 0 bps."}
+      </p>
+    </section>
   );
 }
 
